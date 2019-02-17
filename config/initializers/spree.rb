@@ -12,8 +12,6 @@ require 'spree/core/calculated_adjustments_decorator'
 require "#{Rails.root}/app/models/spree/payment_method_decorator"
 require "#{Rails.root}/app/models/spree/gateway_decorator"
 
-Spree::Api::Config[:requires_authentication] = true
-
 Spree.config do |config|
   config.shipping_instructions = true
   config.address_requires_state = true
@@ -23,6 +21,9 @@ Spree.config do |config|
   config.auto_capture = true
   #config.override_actionmailer_config = false
 end
+
+# Don't log users out when setting a new password
+Spree::Auth::Config[:signout_after_password_change] = false
 
 # TODO Work out why this is necessary
 # Seems like classes within OFN module become 'uninitialized' when server reloads

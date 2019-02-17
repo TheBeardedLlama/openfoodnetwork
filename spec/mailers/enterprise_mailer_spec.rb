@@ -1,42 +1,32 @@
 require 'spec_helper'
 
 describe EnterpriseMailer do
+  include OpenFoodNetwork::EmailHelper
+
   let!(:enterprise) { create(:enterprise) }
+  let!(:user) { create(:user) }
 
   before do
     ActionMailer::Base.deliveries = []
+    setup_email
   end
 
-  context "when given an enterprise without an unconfirmed_email" do
-    it "should send an email confirmation to email" do
-      EnterpriseMailer.confirmation_instructions(enterprise, 'token').deliver
-      ActionMailer::Base.deliveries.count.should == 1
-      mail = ActionMailer::Base.deliveries.first
-      expect(mail.subject).to eq "Please confirm the email address for #{enterprise.name}"
-      expect(mail.to).to include enterprise.email
-      expect(mail.reply_to).to be_nil
-    end
-  end
-
-  context "when given an enterprise with an unconfirmed_email" do
-    before do
-      enterprise.unconfirmed_email = "unconfirmed@email.com"
-      enterprise.save!
-    end
-
-    it "should send an email confirmation to unconfirmed_email" do
-      EnterpriseMailer.confirmation_instructions(enterprise, 'token').deliver
-      ActionMailer::Base.deliveries.count.should == 1
-      mail = ActionMailer::Base.deliveries.first
-      expect(mail.subject).to eq "Please confirm the email address for #{enterprise.name}"
-      expect(mail.to).to include enterprise.unconfirmed_email
-    end
-  end
-
-  it "should send a welcome email when given an enterprise" do
+  describe "#welcome" do
+    it "sends a welcome email when given an enterprise" do
     EnterpriseMailer.welcome(enterprise).deliver
-    ActionMailer::Base.deliveries.count.should == 1
+
     mail = ActionMailer::Base.deliveries.first
-    expect(mail.subject).to eq "#{enterprise.name} is now on #{Spree::Config[:site_name]}"
+    expect(mail.subject)
+      .to eq "#{enterprise.name} is now on #{Spree::Config[:site_name]}"
+    end
+  end
+
+  describe "#manager_invitation" do
+    it "should send a manager invitation email when given an enterprise and user" do
+      EnterpriseMailer.manager_invitation(enterprise, user).deliver
+      expect(ActionMailer::Base.deliveries.count).to eq 1
+      mail = ActionMailer::Base.deliveries.first
+      expect(mail.subject).to eq "#{enterprise.name} has invited you to be a manager"
+    end
   end
 end

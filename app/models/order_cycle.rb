@@ -1,3 +1,5 @@
+require 'open_food_network/scope_variant_to_hub'
+
 class OrderCycle < ActiveRecord::Base
   belongs_to :coordinator, :class_name => 'Enterprise'
 
@@ -6,12 +8,15 @@ class OrderCycle < ActiveRecord::Base
 
   has_many :exchanges, :dependent => :destroy
 
+  has_and_belongs_to_many :schedules, join_table: 'order_cycle_schedules'
+
   # TODO: DRY the incoming/outgoing clause used in several cases below
   # See Spree::Product definition, scopes variants and variants_including_master
   # This will require these accessors to be renamed
   attr_accessor :incoming_exchanges, :outgoing_exchanges
 
   validates_presence_of :name, :coordinator_id
+  validate :orders_close_at_after_orders_open_at?
 
   after_save :refresh_products_cache
 
@@ -38,7 +43,8 @@ class OrderCycle < ActiveRecord::Base
     joins(:exchanges).
       merge(Exchange.outgoing).
       merge(Exchange.with_product(product)).
-      select('DISTINCT order_cycles.*') }
+      select('DISTINCT order_cycles.*')
+  }
 
   scope :with_distributor, lambda { |distributor|
     joins(:exchanges).merge(Exchange.outgoing).merge(Exchange.to_enterprise(distributor))
@@ -73,7 +79,7 @@ class OrderCycle < ActiveRecord::Base
     enterprises = Enterprise.managed_by(user)
 
     # Order cycles where I managed an enterprise at either end of an outgoing exchange
-    # ie. coordinator or distibutor
+    # ie. coordinator or distributor
     joins(:exchanges).merge(Exchange.outgoing).
       where('exchanges.receiver_id IN (?) OR exchanges.sender_id IN (?)', enterprises, enterprises).
       select('DISTINCT order_cycles.*')
@@ -117,7 +123,7 @@ class OrderCycle < ActiveRecord::Base
 
   def clone!
     oc = self.dup
-    oc.name = "COPY OF #{oc.name}"
+    oc.name = I18n.t("models.order_cycle.cloned_order_cycle_name", order_cycle: oc.name)
     oc.orders_open_at = oc.orders_close_at = nil
     oc.coordinator_fee_ids = self.coordinator_fee_ids
     oc.preferred_product_selection_from_coordinator_inventory_only = self.preferred_product_selection_from_coordinator_inventory_only
@@ -268,5 +274,11 @@ class OrderCycle < ActiveRecord::Base
     product.has_variants? &&
       distributed_variants.include?(product.master) &&
       (product.variants & distributed_variants).empty?
+  end
+
+  def orders_close_at_after_orders_open_at?
+    return if orders_open_at.blank? || orders_close_at.blank?
+    return if orders_close_at > orders_open_at
+    errors.add(:orders_close_at, :after_orders_open_at)
   end
 end

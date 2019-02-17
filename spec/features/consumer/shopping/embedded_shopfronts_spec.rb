@@ -1,13 +1,12 @@
 require 'spec_helper'
 
 feature "Using embedded shopfront functionality", js: true do
+  include OpenFoodNetwork::EmbeddedPagesHelper
   include AuthenticationWorkflow
   include WebHelper
   include ShopWorkflow
   include CheckoutWorkflow
   include UIComponentHelper
-
-  Capybara.server_port = 9999
 
   describe "using iframes" do
     let(:distributor) { create(:distributor_enterprise, name: 'My Embedded Hub', permalink: 'test_enterprise', with_payment_and_shipping: true) }
@@ -22,10 +21,10 @@ feature "Using embedded shopfront functionality", js: true do
       add_variant_to_order_cycle(exchange, variant)
 
       Spree::Config[:enable_embedded_shopfronts] = true
-      Spree::Config[:embedded_shopfronts_whitelist] = 'localhost'
+      Spree::Config[:embedded_shopfronts_whitelist] = 'test.com'
 
-      page.driver.browser.js_errors = false
-      Capybara.current_session.driver.visit('spec/support/views/iframe_test.html')
+      allow_any_instance_of(ActionDispatch::Request).to receive(:referer).and_return('https://www.test.com')
+      visit "/embedded-shop-preview.html?#{distributor.permalink}"
     end
 
     after do
@@ -33,9 +32,7 @@ feature "Using embedded shopfront functionality", js: true do
     end
 
     it "displays modified shopfront layout" do
-      expect(page).to have_selector 'iframe#test_iframe'
-
-      within_frame 'test_iframe' do
+      on_embedded_page do
         within 'nav.top-bar' do
           expect(page).to have_selector 'ul.left', visible: false
           expect(page).to have_selector 'ul.center', visible: false
@@ -47,7 +44,7 @@ feature "Using embedded shopfront functionality", js: true do
     end
 
     it "allows shopping and checkout" do
-      within_frame 'test_iframe' do
+      on_embedded_page do
         fill_in "variants[#{variant.id}]", with: 1
         wait_until_enabled 'input.add_to_cart'
 
@@ -70,7 +67,6 @@ feature "Using embedded shopfront functionality", js: true do
           fill_in "Phone", with: "0456789012"
         end
 
-        toggle_billing
         within "#billing" do
           fill_in "Address", with: "123 Street"
           select "Australia", from: "Country"
@@ -79,14 +75,12 @@ feature "Using embedded shopfront functionality", js: true do
           fill_in "Postcode", with: "3066"
         end
 
-        toggle_shipping
         within "#shipping" do
-          find('input[type="radio"]').trigger 'click'
+          find('input[type="radio"]').click
         end
 
-        toggle_payment
         within "#payment" do
-          find('input[type="radio"]').trigger 'click'
+          find('input[type="radio"]').click
         end
 
         place_order
@@ -96,12 +90,13 @@ feature "Using embedded shopfront functionality", js: true do
     end
 
     it "redirects to embedded hub on logout when embedded" do
-      within_frame 'test_iframe' do
-
+      on_embedded_page do
+        wait_for_shop_loaded
         find('ul.right li#login-link a').click
         login_with_modal
 
-        wait_until { page.find('ul.right li.has-dropdown').value.present? }
+        wait_for_shop_loaded
+        wait_until { page.find('ul.right li.user-menu.has-dropdown').value.present? }
         logout_via_navigation
 
         expect(page).to have_text 'My Embedded Hub'
@@ -109,18 +104,30 @@ feature "Using embedded shopfront functionality", js: true do
     end
   end
 
+  private
+
+  # When you have pending changes and try to navigate away from a page, it asks you "Are you sure?".
+  # When we click the "Update" button to save changes, we need to wait
+  #   until it is actually saved and "loading" disappears before doing anything else.
+  def wait_for_shop_loaded
+    page.has_no_content? "Loading"
+    page.has_no_css? "input[value='Updating cart...']"
+  end
+
   def login_with_modal
-    expect(page).to have_selector 'div.login-modal', visible: true
+    page.has_selector? 'div.login-modal', visible: true
 
     within 'div.login-modal' do
       fill_in "Email", with: user.email
       fill_in "Password", with: user.password
       find('input[type="submit"]').click
     end
+
+    page.has_no_selector? 'div.login-modal', visible: true
   end
 
   def logout_via_navigation
-    first('ul.right li.has-dropdown a').click
+    first('ul.right li.user-menu a').click
     find('ul.right ul.dropdown li a[title="Logout"]').click
   end
 end

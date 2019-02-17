@@ -45,7 +45,7 @@ feature %q{
     select2_search admin.email, from: 'Owner'
     select2_search admin.email, from: 'Owner'
 
-    fill_in 'enterprise_contact', :with => 'Kirsten or Ren'
+    fill_in 'enterprise_contact_name', :with => 'Kirsten or Ren'
     fill_in 'enterprise_phone', :with => '0413 897 321'
     fill_in 'enterprise_email_address', :with => 'info@eaterprises.com.au'
     fill_in 'enterprise_website', :with => 'http://eaterprises.com.au'
@@ -53,7 +53,7 @@ feature %q{
     fill_in 'enterprise_address_attributes_address1', :with => '35 Ballantyne St'
     fill_in 'enterprise_address_attributes_city', :with => 'Thornbury'
     fill_in 'enterprise_address_attributes_zipcode', :with => '3072'
-    select2_search 'Australia', :from => 'Country'
+    # default country (Australia in this test) should be selected by default
     select2_search 'Victoria', :from => 'State'
 
     click_button 'Create'
@@ -61,9 +61,6 @@ feature %q{
   end
 
   scenario "editing an existing enterprise", js: true do
-    # Make the page long enough to avoid the save bar overlaying the form
-    page.driver.resize(1280, 1000)
-
     @enterprise = create(:enterprise)
     e2 = create(:enterprise)
     eg1 = create(:enterprise_group, name: 'eg1')
@@ -77,7 +74,7 @@ feature %q{
 
     visit '/admin/enterprises'
     within "tr.enterprise-#{@enterprise.id}" do
-      first("a", text: 'Edit Profile').trigger 'click'
+      first("a", text: 'Settings').click
     end
 
     fill_in 'enterprise_name', :with => 'Eaterprises'
@@ -86,29 +83,33 @@ feature %q{
     choose 'Own'
 
     # Require login to view shopfront or for checkout
-    within(".side_menu") { click_link "Shop Preferences" }
+    accept_alert do
+      within(".side_menu") { click_link "Shop Preferences" }
+    end
     expect(page).to have_checked_field "enterprise_require_login_false"
     expect(page).to have_checked_field "enterprise_allow_guest_orders_true"
     choose "Visible to registered customers only"
     expect(page).to have_no_checked_field "enterprise_require_login_false"
+    # expect(page).to have_checked_field "enterprise_enable_subscriptions_false"
 
-    within(".side_menu") { click_link "Users" }
+    accept_alert do
+      within(".side_menu") { click_link "Users" }
+    end
     select2_search user.email, from: 'Owner'
     expect(page).to have_no_selector '.select2-drop-mask' # Ensure select2 has finished
 
-    click_link "About"
+    accept_alert do
+      click_link "About"
+    end
     fill_in 'enterprise_description', :with => 'Connecting farmers and eaters'
 
-    # TODO: Directly altering the text in the contenteditable div like this started breaking with the upgrade
-    # of Poltergeist from 1.5 to 1.7. Probably requires an upgrade of AngularJS and/or TextAngular
-    # long_description = find :css, "text-angular#enterprise_long_description div.ta-scroll-window div.ta-bind"
-    # long_description.set 'This is an interesting long description'
-    # long_description.native.send_keys(:Enter) # Sets the value
-
-    page.first("input[name='enterprise\[long_description\]']", visible: false).set('This is an interesting long description')
+    description_input = page.find("text-angular#enterprise_long_description div[id^='taTextElement']")
+    description_input.native.send_keys('This is an interesting long description')
 
     # Check Angularjs switching of sidebar elements
-    click_link "Primary Details"
+    accept_alert do
+      click_link "Primary Details"
+    end
     uncheck 'enterprise_is_primary_producer'
     choose 'None'
     page.should_not have_selector "#enterprise_fees"
@@ -130,42 +131,55 @@ feature %q{
 
     select2_search eg1.name, from: 'Groups'
 
-    click_link "Payment Methods"
+    accept_alert do
+      click_link "Payment Methods"
+    end
     page.should_not have_checked_field "enterprise_payment_method_ids_#{payment_method.id}"
     check "enterprise_payment_method_ids_#{payment_method.id}"
 
-    click_link "Shipping Methods"
+    accept_alert do
+      click_link "Shipping Methods"
+    end
     page.should_not have_checked_field "enterprise_shipping_method_ids_#{shipping_method.id}"
     check "enterprise_shipping_method_ids_#{shipping_method.id}"
 
-    click_link "Contact"
-    fill_in 'enterprise_contact', :with => 'Kirsten or Ren'
+    accept_alert do
+      click_link "Contact"
+    end
+    fill_in 'enterprise_contact_name', :with => 'Kirsten or Ren'
     fill_in 'enterprise_phone', :with => '0413 897 321'
     fill_in 'enterprise_email_address', :with => 'info@eaterprises.com.au'
     fill_in 'enterprise_website', :with => 'http://eaterprises.com.au'
 
-    click_link "Social"
+    accept_alert do
+      click_link "Social"
+    end
     fill_in 'enterprise_twitter', :with => '@eaterprises'
 
-    click_link "Business Details"
+    accept_alert do
+      click_link "Business Details"
+    end
     fill_in 'enterprise_abn', :with => '09812309823'
     fill_in 'enterprise_acn', :with => ''
     choose 'Yes' # enterprise_charges_sales_tax
 
-    click_link "Address"
+    accept_alert do
+      click_link "Address"
+    end
     fill_in 'enterprise_address_attributes_address1', :with => '35 Ballantyne St'
     fill_in 'enterprise_address_attributes_city', :with => 'Thornbury'
     fill_in 'enterprise_address_attributes_zipcode', :with => '3072'
     select2_search 'Australia', :from => 'Country'
     select2_search 'Victoria', :from => 'State'
 
-    click_link "Shop Preferences"
-    # TODO: Same as above
-    # shopfront_message = find :css, "text-angular#enterprise_preferred_shopfront_message div.ta-scroll-window div.ta-bind"
-    # shopfront_message.set 'This is my shopfront message.'
-    page.first("input[name='enterprise\[preferred_shopfront_message\]']", visible: false).set('This is my shopfront message.')
+    accept_alert do
+      click_link "Shop Preferences"
+    end
+    shop_message_input = page.find("text-angular#enterprise_preferred_shopfront_message div[id^='taTextElement']")
+    shop_message_input.native.send_keys('This is my shopfront message.')
     page.should have_checked_field "enterprise_preferred_shopfront_order_cycle_order_orders_close_at"
     choose "enterprise_preferred_shopfront_order_cycle_order_orders_open_at"
+    choose "enterprise_enable_subscriptions_true"
 
     click_button 'Update'
 
@@ -194,6 +208,7 @@ feature %q{
     page.should have_content 'This is my shopfront message.'
     page.should have_checked_field "enterprise_preferred_shopfront_order_cycle_order_orders_open_at"
     expect(page).to have_checked_field "enterprise_require_login_true"
+    expect(page).to have_checked_field "enterprise_enable_subscriptions_true"
   end
 
   describe "producer properties" do
@@ -202,8 +217,8 @@ feature %q{
       s = create(:supplier_enterprise)
 
       # When I go to its properties page
-      login_to_admin_section
-      click_link 'Enterprises'
+      quick_login_as_admin
+      visit admin_enterprises_path
       within(".enterprise-#{s.id}") { click_link 'Properties' }
 
       # And I create a property
@@ -226,7 +241,7 @@ feature %q{
       s.producer_properties.create! property_name: 'Certified Organic', value: 'NASAA 12345'
 
       # When I go to its properties page
-      login_to_admin_section
+      quick_login_as_admin
       visit main_app.admin_enterprise_producer_properties_path(s)
 
       # And I update the property
@@ -249,7 +264,7 @@ feature %q{
       pp = s.producer_properties.create! property_name: 'Certified Organic', value: 'NASAA 12345'
 
       # When I go to its properties page
-      login_to_admin_section
+      quick_login_as_admin
       visit main_app.admin_enterprise_producer_properties_path(s)
 
       # And I remove the property
@@ -300,39 +315,47 @@ feature %q{
     let(:distributor1) { create(:distributor_enterprise, name: 'First Distributor') }
     let(:distributor2) { create(:distributor_enterprise, name: 'Another Distributor') }
     let(:distributor3) { create(:distributor_enterprise, name: 'Yet Another Distributor') }
-    let(:enterprise_user) { create_enterprise_user }
+    let(:enterprise_user) { create_enterprise_user(enterprise_limit: 1) }
     let!(:er) { create(:enterprise_relationship, parent: distributor3, child: distributor1, permissions_list: [:edit_profile]) }
 
     before(:each) do
       enterprise_user.enterprise_roles.build(enterprise: supplier1).save
       enterprise_user.enterprise_roles.build(enterprise: distributor1).save
 
-      login_to_admin_as enterprise_user
+      quick_login_as enterprise_user
     end
 
     context "when I have reached my enterprise ownership limit" do
-      it "does not display the link to create a new enterprise" do
+      it "shows a 'limit reached' modal message when trying to create a new enterprise" do
         supplier1.reload
         enterprise_user.owned_enterprises.push [supplier1]
 
-        click_link "Enterprises"
+        visit admin_enterprises_path
 
         page.should have_content supplier1.name
         page.should have_content distributor1.name
-        expect(find("#content-header")).to_not have_link "New Enterprise"
+
+        within 'li#new_product_link' do
+          expect(page).to have_link 'New Enterprise', href: '#'
+          click_link 'New Enterprise'
+        end
+
+        expect(page).to have_content I18n.t('js.admin.enterprise_limit_reached', contact_email: ContentConfig.footer_email)
       end
     end
 
     context "creating an enterprise" do
       before do
         # When I create an enterprise
-        click_link 'Enterprises'
+        visit admin_enterprises_path
         click_link 'New Enterprise'
         fill_in 'enterprise_name', with: 'zzz'
         fill_in 'enterprise_email_address', with: 'bob@example.com'
         fill_in 'enterprise_address_attributes_address1', with: 'z'
         fill_in 'enterprise_address_attributes_city', with: 'z'
         fill_in 'enterprise_address_attributes_zipcode', with: 'z'
+        select2_select 'Australia', from: 'enterprise_address_attributes_country_id'
+        select2_select 'Victoria', from: 'enterprise_address_attributes_state_id'
       end
 
       scenario "without violating rules" do
@@ -345,6 +368,7 @@ feature %q{
 
         # And I should be managing it
         Enterprise.managed_by(enterprise_user).should include enterprise
+        expect(enterprise.contact).to eq enterprise.owner
       end
 
       context "overstepping my owned enterprises limit" do
@@ -356,15 +380,15 @@ feature %q{
           click_button 'Create'
 
           # Then it should show me an error
-          expect(page).to_not have_content 'Enterprise "zzz" has been successfully created!'
+          expect(page).to have_no_content 'Enterprise "zzz" has been successfully created!'
           expect(page).to have_content "#{enterprise_user.email} is not permitted to own any more enterprises (limit is 1)."
         end
       end
     end
 
     scenario "editing enterprises I manage" do
-      click_link 'Enterprises'
-      within("tbody#e_#{distributor1.id}") { click_link 'Manage' }
+      visit admin_enterprises_path
+      within("tbody#e_#{distributor1.id}") { click_link 'Settings' }
 
       fill_in 'enterprise_name', :with => 'Eaterprises'
 
@@ -379,8 +403,8 @@ feature %q{
 
     describe "enterprises I have edit permission for, but do not manage" do
       it "allows me to edit them" do
-        click_link 'Enterprises'
-        within("tbody#e_#{distributor3.id}") { click_link 'Manage' }
+        visit admin_enterprises_path
+        within("tbody#e_#{distributor3.id}") { click_link 'Settings' }
 
         fill_in 'enterprise_name', :with => 'Eaterprises'
 
@@ -394,8 +418,8 @@ feature %q{
       end
 
       it "does not show links to manage shipping methods, payment methods or enterprise fees on the edit page" do
-        click_link 'Enterprises'
-        within("tbody#e_#{distributor3.id}") { click_link 'Manage' }
+        visit admin_enterprises_path
+        within("tbody#e_#{distributor3.id}") { click_link 'Settings' }
 
         within(".side_menu") do
           page.should_not have_link 'Shipping Methods'
@@ -405,22 +429,10 @@ feature %q{
       end
     end
 
-    scenario "editing images for an enterprise" do
-      click_link 'Enterprises'
-      within("tbody#e_#{distributor1.id}") { click_link 'Manage' }
-
-      within(".side_menu") do
-        click_link "Images"
-      end
-
-      page.should have_content "LOGO"
-      page.should have_content "PROMO"
-    end
-
     scenario "managing producer properties" do
       create(:property, name: "Certified Organic")
-      click_link 'Enterprises'
-      within("#e_#{supplier1.id}") { click_link 'Manage' }
+      visit admin_enterprises_path
+      within("#e_#{supplier1.id}") { click_link 'Settings' }
       within(".side_menu") do
         click_link "Properties"
       end
@@ -443,7 +455,12 @@ feature %q{
         click_link "Properties"
       end
 
-      within("#spree_producer_property_#{pp.id}") { page.find('a.remove_fields').click }
+      # Bug: https://github.com/openfoodfoundation/openfoodnetwork/issues/2453
+      accept_alert do
+        accept_alert do
+          within("#spree_producer_property_#{pp.id}") { page.find('a.remove_fields').click }
+        end
+      end
 
       click_button 'Update'
 

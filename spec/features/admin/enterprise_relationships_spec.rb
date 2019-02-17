@@ -9,7 +9,7 @@ feature %q{
 
 
   context "as a site administrator" do
-    before { login_to_admin_section }
+    before { quick_login_as_admin }
 
     scenario "listing relationships" do
       # Given some enterprises with relationships
@@ -19,8 +19,9 @@ feature %q{
       create(:enterprise_relationship, parent: e3, child: e4, permissions_list: [:add_to_order_cycle, :manage_products])
 
       # When I go to the relationships page
+      visit spree.admin_path
       click_link 'Enterprises'
-      click_link 'Relationships'
+      click_link 'Permissions'
 
       # Then I should see the relationships
       within('table#enterprise-relationships') do
@@ -47,6 +48,8 @@ feature %q{
       select2_select 'Two', from: 'enterprise_relationship_child_id'
       click_button 'Create'
 
+      # Wait for row to appear since have_relationship doesn't wait
+      page.should have_selector 'tr', count: 2
       page.should have_relationship e1, e2, ['to add to order cycle', 'to add products to inventory', 'to edit profile']
       er = EnterpriseRelationship.where(parent_id: e1, child_id: e2).first
       er.should be_present
@@ -79,7 +82,9 @@ feature %q{
       visit admin_enterprise_relationships_path
       page.should have_relationship e1, e2, ['to add to order cycle']
 
-      first("a.delete-enterprise-relationship").click
+      accept_alert do
+        first("a.delete-enterprise-relationship").click
+      end
 
       page.should_not have_relationship e1, e2
       EnterpriseRelationship.where(id: er.id).should be_empty
@@ -97,7 +102,7 @@ feature %q{
     let!(:er2) { create(:enterprise_relationship, parent: d2, child: d1) }
     let!(:er3) { create(:enterprise_relationship, parent: d2, child: d3) }
 
-    before { login_to_admin_as enterprise_user }
+    before { quick_login_as enterprise_user }
 
     scenario "enterprise user can only see relationships involving their enterprises" do
       visit admin_enterprise_relationships_path
@@ -107,11 +112,10 @@ feature %q{
       page.should_not have_relationship d2, d3
     end
 
-
     scenario "enterprise user can only add their own enterprises as parent" do
       visit admin_enterprise_relationships_path
       page.should have_select2 'enterprise_relationship_parent_id', options: ['', d1.name]
-      page.should have_select2 'enterprise_relationship_child_id', options: ['', d1.name, d2.name, d3.name]
+      page.should have_select2 'enterprise_relationship_child_id', with_options: ['', d1.name, d2.name, d3.name]
     end
   end
 

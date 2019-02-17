@@ -2,6 +2,7 @@
   = t :checkout_title
 
 = inject_enterprise_and_relatives
+= inject_available_countries
 
 .darkswarm.footer-pad
   - content_for :order_cycle_form do
@@ -15,7 +16,7 @@
 
   = render partial: "shopping_shared/details"
 
-  %accordion{"close-others" => "true"}
+  %accordion{"close-others" => "false"}
     %checkout.row{"ng-controller" => "CheckoutCtrl"}
       .small-12.medium-8.large-9.columns
         - unless spree_current_user

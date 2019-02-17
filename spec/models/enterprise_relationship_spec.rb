@@ -124,12 +124,12 @@ describe EnterpriseRelationship do
     end
 
     it "finds inactive enterprises by default" do
-      e1.update_attribute :confirmed_at, nil
+      e1.update_attribute :sells, 'unspecified'
       EnterpriseRelationship.relatives[e2.id][:producers].should == Set.new([e1.id])
     end
 
     it "does not find inactive enterprises when requested" do
-      e1.update_attribute :confirmed_at, nil
+      e1.update_attribute :sells, 'unspecified'
       EnterpriseRelationship.relatives(true)[e2.id][:producers].should be_empty
     end
 
@@ -140,7 +140,7 @@ describe EnterpriseRelationship do
   end
 
   describe "callbacks" do
-    context "applying variant override permissions" do
+    context "updating variant override permissions" do
       let(:hub) { create(:distributor_enterprise) }
       let(:producer) { create(:supplier_enterprise) }
       let(:some_other_producer) { create(:supplier_enterprise) }
@@ -151,6 +151,17 @@ describe EnterpriseRelationship do
         let!(:vo1) { create(:variant_override, hub: hub, variant: create(:variant, product: create(:product, supplier: producer))) }
         let!(:vo2) { create(:variant_override, hub: hub, variant: create(:variant, product: create(:product, supplier: producer))) }
         let!(:vo3) { create(:variant_override, hub: hub, variant: create(:variant, product: create(:product, supplier: some_other_producer))) }
+
+        context "revoking variant override permissions" do
+          context "when the enterprise relationship is destroyed" do
+            before { er.destroy }
+            it "should set permission_revoked_at to the current time for all variant overrides of the relationship" do
+              expect(vo1.reload.permission_revoked_at).to_not be_nil
+              expect(vo2.reload.permission_revoked_at).to_not be_nil
+              expect(vo2.reload.permission_revoked_at).to_not be_nil
+            end
+          end
+        end
 
         context "and is then removed" do
           before { er.permissions_list = [:add_to_order_cycles]; er.save! }

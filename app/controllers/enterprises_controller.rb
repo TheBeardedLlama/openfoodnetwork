@@ -7,12 +7,26 @@ class EnterprisesController < BaseController
 
   # These prepended filters are in the reverse order of execution
   prepend_before_filter :set_order_cycles, :require_distributor_chosen, :reset_order, only: :shop
-  before_filter :check_stock_levels, :set_noindex_meta_tag, only: :shop
 
   before_filter :clean_permalink, only: :check_permalink
   before_filter :enable_embedded_shopfront
 
   respond_to :js, only: :permalink_checker
+
+  def shop
+    return redirect_to spree.cart_path unless enough_stock?
+    set_noindex_meta_tag
+
+    enterprises = current_distributor
+      .plus_relatives_and_oc_producers(shop_order_cycles)
+      .activated
+      .includes(address: :state)
+      .all
+
+    enterprises = inject_json_ams('enterprises', enterprises)
+
+    render locals: { enterprises: enterprises }
+  end
 
   def relatives
     set_enterprise
@@ -33,7 +47,6 @@ class EnterprisesController < BaseController
     begin
       Rails.application.routes.recognize_path( "/#{ params[:permalink].to_s }" )
       render text: params[:permalink], status: 409
-
     rescue ActionController::RoutingError
       render text: params[:permalink], status: 200
     end
@@ -49,10 +62,8 @@ class EnterprisesController < BaseController
     params[:permalink] = params[:permalink].parameterize
   end
 
-  def check_stock_levels
-    if current_order(true).insufficient_stock_lines.present?
-      redirect_to spree.cart_path
-    end
+  def enough_stock?
+    current_order(true).insufficient_stock_lines.blank?
   end
 
   def reset_order
@@ -78,7 +89,7 @@ class EnterprisesController < BaseController
 
   def reset_user_and_customer(order)
     order.associate_user!(spree_current_user) if order.user.blank? || order.email.blank?
-    order.send(:associate_customer) if order.customer.nil? # Only associates existing customers
+    order.__send__(:associate_customer) if order.customer.nil? # Only associates existing customers
   end
 
   def reset_order_cycle(order, distributor)
@@ -86,7 +97,25 @@ class EnterprisesController < BaseController
     order.order_cycle = order_cycle_options.first if order_cycle_options.count == 1
   end
 
+  def shop_order_cycles
+    if current_order_cycle
+      [current_order_cycle]
+    else
+      OrderCycle.not_closed.with_distributor(current_distributor)
+    end
+  end
+
   def set_noindex_meta_tag
     @noindex_meta_tag = true unless current_distributor.visible?
+  end
+
+  def inject_json_ams(name, object)
+    options = {
+      each_serializer: Api::EnterpriseSerializer,
+      data: OpenFoodNetwork::EnterpriseInjectionData.new
+    }
+    serializer_instance = ActiveModel::ArraySerializer.new(object, options)
+
+    { name: name, json: serializer_instance.to_json }
   end
 end

@@ -1,13 +1,23 @@
 class Api::Admin::EnterpriseSerializer < ActiveModel::Serializer
   attributes :name, :id, :is_primary_producer, :is_distributor, :sells, :category, :payment_method_ids, :shipping_method_ids
-  attributes :producer_profile_only, :email, :long_description, :permalink
+  attributes :producer_profile_only, :long_description, :permalink
   attributes :preferred_shopfront_message, :preferred_shopfront_closed_message, :preferred_shopfront_taxon_order, :preferred_shopfront_order_cycle_order
   attributes :preferred_product_selection_from_inventory_only
-  attributes :owner, :users, :tag_groups, :default_tag_group
+  attributes :owner, :contact, :users, :tag_groups, :default_tag_group
   attributes :require_login, :allow_guest_orders, :allow_order_changes
+  attributes :logo, :promo_image
 
   has_one :owner, serializer: Api::Admin::UserSerializer
   has_many :users, serializer: Api::Admin::UserSerializer
+  has_one :address, serializer: Api::AddressSerializer
+
+  def logo
+    attachment_urls(object.logo, [:thumb, :small, :medium])
+  end
+
+  def promo_image
+    attachment_urls(object.promo_image, [:thumb, :medium, :large])
+  end
 
   def tag_groups
     object.tag_rules.prioritised.reject(&:is_default).each_with_object([]) do |tag_rule, tag_groups|
@@ -31,5 +41,25 @@ class Api::Admin::EnterpriseSerializer < ActiveModel::Serializer
       return tag_group if tag_group[:tags].length == tags.length && (tag_group[:tags] & tags) == tag_group[:tags]
     end
     return { tags: tags, rules: [] }
+  end
+
+  private
+
+  # Returns a hash of URLs for specified versions of an attachment.
+  #
+  # Example:
+  #
+  #   attachment_urls(object.logo, [:thumb, :small, :medium])
+  #   # {
+  #   #   thumb: LOGO_THUMB_URL,
+  #   #   small: LOGO_SMALL_URL,
+  #   #   medium: LOGO_MEDIUM_URL
+  #   # }
+  def attachment_urls(attachment, versions)
+    return unless attachment.exists?
+
+    versions.each_with_object({}) do |version, urls|
+      urls[version] = attachment.url(version)
+    end
   end
 end

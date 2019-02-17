@@ -1,15 +1,21 @@
-angular.module("ofn.admin").factory "ProductImportService", ($rootScope) ->
+angular.module("admin.productImport").factory "ProductImportService", ($rootScope) ->
   new class ProductImportService
-    suppliers: {}
+    enterprises: {}
     resetTotal: 0
+    settings: {}
 
-    updateResetAbsent: (supplierId, resetCount, resetAbsent) ->
+    updateResetAbsent: (enterpriseId, resetCount, resetAbsent) ->
       if resetAbsent
-        @suppliers[supplierId] = resetCount
+        @enterprises[enterpriseId] = resetCount
         @resetTotal += resetCount
       else
-        @suppliers[supplierId] = null
+        @enterprises[enterpriseId] = null
         @resetTotal -= resetCount
 
       $rootScope.resetTotal = @resetTotal
 
+    updateSettings: (updated) ->
+      angular.merge(@settings, updated)
+
+    getSettings: () ->
+      @settings

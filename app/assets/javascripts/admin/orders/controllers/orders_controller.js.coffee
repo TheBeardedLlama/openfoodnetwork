@@ -1,26 +1,74 @@
-angular.module("admin.orders").controller "ordersCtrl", ($scope, $compile, $attrs, shops, orderCycles) ->
-  $scope.$compile = $compile
-  $scope.shops = shops
-  $scope.orderCycles = orderCycles
+angular.module("admin.orders").controller "ordersCtrl", ($scope, RequestMonitor, Orders, SortOptions, $window, $filter) ->
+  $scope.RequestMonitor = RequestMonitor
+  $scope.pagination = Orders.pagination
+  $scope.orders = Orders.all
+  $scope.sortOptions = SortOptions
+  $scope.per_page_options = [
+    {id: 15, name: t('js.admin.orders.index.per_page', results: 15)},
+    {id: 50, name: t('js.admin.orders.index.per_page', results: 50)},
+    {id: 100, name: t('js.admin.orders.index.per_page', results: 100)}
+  ]
+  $scope.selected_orders = []
+  $scope.checkboxes = {}
+  $scope.selected = false
+  $scope.select_all = false
+  $scope.poll = 0
 
-  $scope.distributor_id = parseInt($attrs.ofnDistributorId)
-  $scope.order_cycle_id = parseInt($attrs.ofnOrderCycleId)
+  $scope.initialise = ->
+    $scope.per_page = 15
+    $scope.q = {
+      completed_at_not_null: true
+    }
+    $scope.fetchResults()
 
-  $scope.validOrderCycle = (oc) ->
-    $scope.orderCycleHasDistributor oc, parseInt($scope.distributor_id)
+  $scope.fetchResults = (page=1) ->
+    $scope.resetSelected()
+    Orders.index({
+      'q[completed_at_lt]': $scope['q']['completed_at_lt'],
+      'q[completed_at_gt]': $scope['q']['completed_at_gt'],
+      'q[state_eq]': $scope['q']['state_eq'],
+      'q[number_cont]': $scope['q']['number_cont'],
+      'q[email_cont]': $scope['q']['email_cont'],
+      'q[bill_address_firstname_start]': $scope['q']['bill_address_firstname_start'],
+      'q[bill_address_lastname_start]': $scope['q']['bill_address_lastname_start'],
+      # Set default checkbox values to null. See: https://github.com/openfoodfoundation/openfoodnetwork/pull/3076#issuecomment-440010498
+      'q[completed_at_not_null]': $scope['q']['completed_at_not_null'] || null,
+      'q[inventory_units_shipment_id_null]': $scope['q']['inventory_units_shipment_id_null'] || null,
+      'q[distributor_id_in]': $scope['q']['distributor_id_in'],
+      'q[order_cycle_id_in]': $scope['q']['order_cycle_id_in'],
+      'q[order_cycle_id_in]': $scope['q']['order_cycle_id_in'],
+      'q[s]': $scope.sorting || 'completed_at desc',
+      per_page: $scope.per_page,
+      page: page
+    })
 
-  $scope.distributorHasOrderCycles = (distributor) ->
-    (oc for oc in orderCycles when @orderCycleHasDistributor(oc, distributor.id)).length > 0
+  $scope.resetSelected = ->
+    $scope.selected_orders.length = 0
+    $scope.selected = false
+    $scope.select_all = false
+    $scope.checkboxes = {}
 
-  $scope.orderCycleHasDistributor = (oc, distributor_id) ->
-    distributor_ids = (d.id for d in oc.distributors)
-    distributor_ids.indexOf(distributor_id) != -1
+  $scope.toggleSelection = (id) ->
+    index = $scope.selected_orders.indexOf(id)
 
-  $scope.distributionChosen = ->
-    $scope.distributor_id && $scope.order_cycle_id
+    if index == -1
+      $scope.selected_orders.push(id)
+    else
+      $scope.selected_orders.splice(index, 1)
 
-  for oc in $scope.orderCycles
-    oc.name_and_status = "#{oc.name} (#{oc.status})"
+  $scope.toggleAll = ->
+    $scope.selected_orders.length = 0
+    $scope.orders.forEach (order) ->
+      $scope.checkboxes[order.id] = $scope.select_all
+      $scope.selected_orders.push order.id if $scope.select_all
 
-  for shop in $scope.shops
-    shop.disabled = !$scope.distributorHasOrderCycles(shop)
+  $scope.$watch 'sortOptions', (sort) ->
+    if sort && sort.predicate != ""
+      $scope.sorting = sort.predicate + ' desc' if sort.reverse
+      $scope.sorting = sort.predicate + ' asc' if !sort.reverse
+      $scope.fetchResults()
+  , true
+
+  $scope.changePage = (newPage) ->
+    $scope.page = newPage
+    $scope.fetchResults(newPage)

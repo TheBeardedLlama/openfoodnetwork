@@ -27,7 +27,6 @@ class Api::UncachedProductSerializer < ActiveModel::Serializer
     else
       object.master.price_with_fees(options[:current_distributor], options[:current_order_cycle])
     end
-
   end
 end
 
@@ -36,7 +35,7 @@ class Api::CachedProductSerializer < ActiveModel::Serializer
   #delegate :cache_key, to: :object
   include ActionView::Helpers::SanitizeHelper
 
-  attributes :id, :name, :permalink
+  attributes :id, :name, :permalink, :meta_keywords
   attributes :on_demand, :group_buy, :notes, :description, :description_html
   attributes :properties_with_values
 

@@ -9,7 +9,6 @@ Spree.user_class.class_eval do
   has_many :owned_groups, class_name: 'EnterpriseGroup', foreign_key: :owner_id, inverse_of: :owner
   has_many :account_invoices
   has_many :billable_periods, foreign_key: :owner_id, inverse_of: :owner
-  has_one :cart
   has_many :customers
   has_many :credit_cards
 
@@ -19,9 +18,14 @@ Spree.user_class.class_eval do
   accepts_nested_attributes_for :ship_address
 
   attr_accessible :enterprise_ids, :enterprise_roles_attributes, :enterprise_limit, :locale, :bill_address_attributes, :ship_address_attributes
-  after_create :send_signup_confirmation
+  after_create :associate_customers
 
   validate :limit_owned_enterprises
+
+  # We use the same options as Spree and add :confirmable
+  devise :confirmable, reconfirmable: true
+  # TODO: Later versions of devise have a dedicated after_confirmation callback, so use that
+  after_update :welcome_after_confirm, if: lambda { confirmation_token_changed? && confirmation_token.nil? }
 
   def known_users
     if admin?
@@ -46,12 +50,28 @@ Spree.user_class.class_eval do
     customers.find_by_enterprise_id(enterprise)
   end
 
+  def welcome_after_confirm
+    # Send welcome email if we are confirming an user's email
+    # Note: this callback only runs on email confirmation
+    if confirmed? && unconfirmed_email.nil? && !unconfirmed_email_changed?
+      send_signup_confirmation
+    end
+  end
+
   def send_signup_confirmation
     Delayed::Job.enqueue ConfirmSignupJob.new(id)
   end
 
+  def associate_customers
+    self.customers = Customer.where(email: email)
+  end
+
   def can_own_more_enterprises?
     owned_enterprises(:reload).size < enterprise_limit
+  end
+
+  def default_card
+    credit_cards.where(is_default: true).first
   end
 
   private

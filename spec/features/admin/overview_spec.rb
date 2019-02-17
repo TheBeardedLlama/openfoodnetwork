@@ -28,18 +28,6 @@ feature %q{
         page.should have_selector ".dashboard_item .button.bottom", text: "SEE #{d1.name.upcase} LIVE"
       end
 
-      context "when enterprise has not been confirmed" do
-        before do
-          d1.confirmed_at = nil
-          d1.save!
-        end
-
-        it "displays a message telling to user to confirm" do
-          visit '/admin'
-          page.should have_selector ".alert-box", text: "Please confirm the email address for #{d1.name}. We've sent an email to #{d1.email}."
-        end
-      end
-
       context "when visibilty is set to false" do
         before do
           d1.visible = false
@@ -68,19 +56,24 @@ feature %q{
     context "with multiple enterprises" do
       let(:d1) { create(:distributor_enterprise) }
       let(:d2) { create(:distributor_enterprise) }
+      let(:non_distributor_enterprise) { create(:enterprise, sells: 'none') }
 
-      before :each do
+      before do
         @enterprise_user.enterprise_roles.build(enterprise: d1).save
         @enterprise_user.enterprise_roles.build(enterprise: d2).save
+        @enterprise_user
+          .enterprise_roles.build(enterprise: non_distributor_enterprise).save
       end
 
       it "displays information about the enterprise" do
         visit '/admin'
-        page.should have_selector ".dashboard_item#enterprises h3", text: "My Enterprises"
-        page.should have_selector ".dashboard_item#products"
-        page.should have_selector ".dashboard_item#order_cycles"
-        page.should have_selector ".dashboard_item#enterprises .list-item", text: d1.name
-        page.should have_selector ".dashboard_item#enterprises .button.bottom", text: "MANAGE MY ENTERPRISES"
+
+        expect(page).to have_selector ".dashboard_item#enterprises h3", text: "My Enterprises"
+        expect(page).to have_selector ".dashboard_item#products"
+        expect(page).to have_selector ".dashboard_item#order_cycles"
+        expect(page).to have_selector ".dashboard_item#enterprises .list-item", text: d1.name
+        expect(page).to have_selector ".dashboard_item#enterprises .list-item", text: non_distributor_enterprise.name
+        expect(page).to have_selector ".dashboard_item#enterprises .button.bottom", text: "MANAGE MY ENTERPRISES"
       end
 
       context "but no products or order cycles" do
@@ -144,7 +137,6 @@ feature %q{
     expect(Spree::Dash::Config.configured?).to be true
 
     block.call
-
   ensure
     Spree::Dash::Config.preferred_app_id = nil
     Spree::Dash::Config.preferred_site_id = nil

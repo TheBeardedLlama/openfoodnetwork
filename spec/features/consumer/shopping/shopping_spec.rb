@@ -12,7 +12,7 @@ feature "As a consumer I want to shop with a distributor", js: true do
     let(:supplier) { create(:supplier_enterprise) }
     let(:oc1) { create(:simple_order_cycle, distributors: [distributor], coordinator: create(:distributor_enterprise), orders_close_at: 2.days.from_now) }
     let(:oc2) { create(:simple_order_cycle, distributors: [distributor], coordinator: create(:distributor_enterprise), orders_close_at: 3.days.from_now) }
-    let(:product) { create(:simple_product, supplier: supplier) }
+    let(:product) { create(:simple_product, supplier: supplier, meta_keywords: "Domestic") }
     let(:variant) { product.variants.first }
     let(:order) { create(:order, distributor: distributor) }
 
@@ -103,14 +103,16 @@ feature "As a consumer I want to shop with a distributor", js: true do
             within("li.cart") { page.should have_content with_currency(1020.99) }
 
             # -- Changing order cycle
-            select "frogs", from: "order_cycle_id"
+            accept_alert do
+              select "frogs", from: "order_cycle_id"
+            end
             page.should have_content with_currency(19.99)
 
             # -- Cart should be cleared
-            # ng-animate means that the old product row is likely to be present, so we explicitly
-            # fill in the quantity in the incoming row
+            # ng-animate means that the old product row is likely to be present, so we ensure
+            # that we are not filling in the quantity on the outgoing row
             page.should_not have_selector "tr.product-cart"
-            within('product.ng-enter') { fill_in "variants[#{variant.id}]", with: 1 }
+            within('product:not(.ng-leave)') { fill_in "variants[#{variant.id}]", with: 1 }
             within("li.cart") { page.should have_content with_currency(19.99) }
           end
 
@@ -169,7 +171,7 @@ feature "As a consumer I want to shop with a distributor", js: true do
     describe "after selecting an order cycle with products visible" do
       let(:variant1) { create(:variant, product: product, price: 20) }
       let(:variant2) { create(:variant, product: product, price: 30, display_name: "Badgers") }
-      let(:product2) { create(:simple_product, supplier: supplier, name: "Meercats") }
+      let(:product2) { create(:simple_product, supplier: supplier, name: "Meercats", meta_keywords: "Wild") }
       let(:variant3) { create(:variant, product: product2, price: 40, display_name: "Ferrets") }
       let(:exchange) { Exchange.find(oc1.exchanges.to_enterprises(distributor).outgoing.first.id) }
 
@@ -212,6 +214,10 @@ feature "As a consumer I want to shop with a distributor", js: true do
         fill_in "search", with: "Meer"           # For product named "Meercats"
         page.should have_content product2.name
         page.should_not have_content product.name
+
+        fill_in "search", with: "Dome"           # For product with meta_keywords "Domestic"
+        expect(page).to have_content product.name
+        expect(page).not_to have_content product2.name
       end
 
       it "returns search results for products where the search term matches one of the product's variant names" do
@@ -411,12 +417,12 @@ feature "As a consumer I want to shop with a distributor", js: true do
         page.should have_content "Orders are closed"
       end
       it "shows the last order cycle" do
-        oc1 = create(:simple_order_cycle, distributors: [distributor], orders_close_at: 10.days.ago)
+        oc1 = create(:simple_order_cycle, distributors: [distributor], orders_open_at: 17.days.ago, orders_close_at: 10.days.ago)
         visit shop_path
         page.should have_content "The last cycle closed 10 days ago"
       end
       it "shows the next order cycle" do
-        oc1 = create(:simple_order_cycle, distributors: [distributor], orders_open_at: 10.days.from_now)
+        oc1 = create(:simple_order_cycle, distributors: [distributor], orders_open_at: 10.days.from_now, orders_close_at: 17.days.from_now)
         visit shop_path
         page.should have_content "The next cycle opens in 10 days"
       end
@@ -426,6 +432,7 @@ feature "As a consumer I want to shop with a distributor", js: true do
       let(:exchange) { Exchange.find(oc1.exchanges.to_enterprises(distributor).outgoing.first.id) }
       let(:product) { create(:simple_product) }
       let(:variant) { create(:variant, product: product) }
+      let(:unregistered_customer) { create(:customer, user: nil, enterprise: distributor) }
 
       before do
         add_variant_to_order_cycle(exchange, variant)
@@ -465,8 +472,7 @@ feature "As a consumer I want to shop with a distributor", js: true do
 
           it "shows just products" do
             visit shop_path
-            expect(page).to have_no_content "This shop is for customers only."
-            expect(page).to have_content product.name
+            shows_products_without_customer_warning
           end
         end
 
@@ -475,8 +481,7 @@ feature "As a consumer I want to shop with a distributor", js: true do
 
           it "shows just products" do
             visit shop_path
-            expect(page).to have_no_content "This shop is for customers only."
-            expect(page).to have_content product.name
+            shows_products_without_customer_warning
           end
         end
 
@@ -488,11 +493,28 @@ feature "As a consumer I want to shop with a distributor", js: true do
 
           it "shows just products" do
             visit shop_path
-            expect(page).to have_no_content "This shop is for customers only."
-            expect(page).to have_content product.name
+            shows_products_without_customer_warning
           end
         end
       end
+
+      context "when previously unregistered customer registers" do
+        let!(:returning_user) { create(:user, email: unregistered_customer.email) }
+
+        before do
+          quick_login_as returning_user
+        end
+
+        it "shows the products without customer only message" do
+          visit shop_path
+          shows_products_without_customer_warning
+        end
+      end
     end
+  end
+
+  def shows_products_without_customer_warning
+    expect(page).to have_no_content "This shop is for customers only."
+    expect(page).to have_content product.name
   end
 end

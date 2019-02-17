@@ -4,6 +4,7 @@ feature %q{
   As an Administrator
   I want to be able to manage orders in bulk
 } , js: true do
+  include AdminHelper
   include AuthenticationWorkflow
   include WebHelper
 
@@ -53,9 +54,9 @@ feature %q{
       end
 
       it "displays a column for order date" do
-        expect(page).to have_selector "th.date", text: "ORDER DATE", :visible => true
-        expect(page).to have_selector "td.date", text: o1.completed_at.strftime("%F %T"), :visible => true
-        expect(page).to have_selector "td.date", text: o2.completed_at.strftime("%F %T"), :visible => true
+        expect(page).to have_selector "th.date", text: I18n.t("admin.orders.bulk_management.order_date").upcase, visible: true
+        expect(page).to have_selector "td.date", text: o1.completed_at.strftime('%B %d, %Y'), visible: true
+        expect(page).to have_selector "td.date", text: o2.completed_at.strftime('%B %d, %Y'), visible: true
       end
 
       it "displays a column for producer" do
@@ -82,6 +83,40 @@ feature %q{
         expect(page).to have_selector "td.max", text: li2.max_quantity.to_s, :visible => true
       end
     end
+
+    describe "sorting of line items" do
+      let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now) }
+      let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now) }
+      let!(:li1) { create(:line_item, order: o1) }
+      let!(:li2) { create(:line_item, order: o2) }
+
+      before do
+        visit spree.admin_bulk_order_management_path
+      end
+
+      it "sorts by customer name when the customer name header is clicked" do
+        customer_names = [o1.name, o2.name].sort
+
+        within "#listing_orders thead" do
+          click_on "Name"
+        end
+
+        expect(page).to have_selector("#listing_orders .line_item:nth-child(1) .full_name", text: customer_names[0])
+        expect(page).to have_selector("#listing_orders .line_item:nth-child(2) .full_name", text: customer_names[1])
+      end
+
+      it "sorts by customer name in reverse when the customer name header is clicked twice" do
+        customer_names = [o1.name, o2.name].sort.reverse
+
+        within "#listing_orders thead" do
+          click_on "Name"
+          click_on "Name"
+        end
+
+        expect(page).to have_selector("#listing_orders .line_item:nth-child(1) .full_name", text: customer_names[1])
+        expect(page).to have_selector("#listing_orders .line_item:nth-child(2) .full_name", text: customer_names[0])
+      end
+    end
   end
 
   context "altering line item properties" do
@@ -98,7 +133,7 @@ feature %q{
       end
 
       it "adds the class 'ng-dirty' to input elements when value is altered" do
-        expect(page).to_not have_css "input[name='quantity'].ng-dirty"
+        expect(page).to have_no_css "input[name='quantity'].ng-dirty"
         fill_in "quantity", :with => 2
         expect(page).to have_css "input[name='quantity'].ng-dirty"
       end
@@ -155,11 +190,7 @@ feature %q{
     context "modifying the weight/volume of a line item" do
       it "price is altered" do
         visit '/admin/orders/bulk_management'
-        find("div#columns-dropdown", :text => "COLUMNS").click
-        find("div#columns-dropdown div.menu div.menu_item", text: "Weight/Volume").click
-        find("div#columns-dropdown div.menu div.menu_item", text: "Price").click
-        # hide dropdown
-        find("div#columns-dropdown", :text => "COLUMNS").click
+        toggle_columns "Weight/Volume", "Price"
         within "tr#li_#{li1.id}" do
           expect(page).to have_field "price", with: "50.00"
           fill_in "final_weight_volume", :with => 2000
@@ -176,9 +207,7 @@ feature %q{
     context "modifying the quantity of a line item" do
       it "price is altered" do
         visit '/admin/orders/bulk_management'
-        find("div#columns-dropdown", :text => "COLUMNS").click
-        find("div#columns-dropdown div.menu div.menu_item", text: "Price").click
-        find("div#columns-dropdown", :text => "COLUMNS").click
+        toggle_columns "Price"
         within "tr#li_#{li1.id}" do
           expect(page).to have_field "price", with: "#{format("%.2f",li1.price * 5)}"
           fill_in "quantity", :with => 6
@@ -190,9 +219,7 @@ feature %q{
     context "modifying the quantity of a line item" do
       it "weight/volume is altered" do
         visit '/admin/orders/bulk_management'
-        find("div#columns-dropdown", :text => "COLUMNS").click
-        find("div#columns-dropdown div.menu div.menu_item", text: "Weight/Volume").click
-        find("div#columns-dropdown", :text => "COLUMNS").click
+        toggle_columns "Weight/Volume"
         within "tr#li_#{li1.id}" do
           expect(page).to have_field "final_weight_volume", with: "#{li1.final_weight_volume.round}"
           fill_in "quantity", :with => 6
@@ -206,19 +233,17 @@ feature %q{
         visit '/admin/orders/bulk_management'
 
         expect(page).to have_selector "th", :text => "NAME"
-        expect(page).to have_selector "th", :text => "ORDER DATE"
+        expect(page).to have_selector "th", text: I18n.t("admin.orders.bulk_management.order_date").upcase
         expect(page).to have_selector "th", :text => "PRODUCER"
         expect(page).to have_selector "th", :text => "PRODUCT: UNIT"
         expect(page).to have_selector "th", :text => "QUANTITY"
         expect(page).to have_selector "th", :text => "MAX"
 
-        find("div#columns-dropdown", :text => "COLUMNS").click
-        find("div#columns-dropdown div.menu div.menu_item", text: "Producer").click
-        find("div#columns-dropdown", :text => "COLUMNS").click
+        toggle_columns "Producer"
 
         expect(page).to have_no_selector "th", :text => "PRODUCER"
         expect(page).to have_selector "th", :text => "NAME"
-        expect(page).to have_selector "th", :text => "ORDER DATE"
+        expect(page).to have_selector "th", text: I18n.t("admin.orders.bulk_management.order_date").upcase
         expect(page).to have_selector "th", :text => "PRODUCT: UNIT"
         expect(page).to have_selector "th", :text => "QUANTITY"
         expect(page).to have_selector "th", :text => "MAX"
@@ -414,18 +439,20 @@ feature %q{
         expect(page).to have_selector "tr#li_#{li3.id}"
         fill_in "quick_search", :with => o1.email
         expect(page).to have_selector "tr#li_#{li1.id}"
-        expect(page).to have_no_selector "tr#li_#{li2.id}",  true
+        expect(page).to have_no_selector "tr#li_#{li2.id}"
         expect(page).to have_no_selector "tr#li_#{li3.id}"
       end
     end
 
     context "using date restriction controls" do
-      let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: (Date.current - 8).strftime("%F %T") ) }
-      let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
-      let!(:o3) { create(:order_with_distributor, state: 'complete', completed_at: (Date.current + 2).strftime("%F %T") ) }
+      let!(:o1) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.today - 7.days - 1.second) }
+      let!(:o2) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.today - 7.days) }
+      let!(:o3) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now.end_of_day) }
+      let!(:o4) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now.end_of_day + 1.second) }
       let!(:li1) { create(:line_item, order: o1, :quantity => 1 ) }
       let!(:li2) { create(:line_item, order: o2, :quantity => 2 ) }
       let!(:li3) { create(:line_item, order: o3, :quantity => 3 ) }
+      let!(:li4) { create(:line_item, order: o4, :quantity => 4 ) }
 
       before :each do
         visit '/admin/orders/bulk_management'
@@ -433,29 +460,35 @@ feature %q{
 
       it "displays date fields for filtering orders, with default values set" do
         # use Date.current since Date.today is without timezone
-        today = Date.current
+        today = Time.zone.today
         one_week_ago = today.prev_day(7).strftime("%F")
-        tonight = today.next_day.strftime("%F")
         expect(page).to have_field "start_date_filter", with: one_week_ago
-        expect(page).to have_field "end_date_filter", with: tonight
+        expect(page).to have_field "end_date_filter", with: today.strftime("%F")
       end
 
       it "only loads line items whose orders meet the date restriction criteria" do
         expect(page).to have_no_selector "tr#li_#{li1.id}"
         expect(page).to have_selector "tr#li_#{li2.id}"
-        expect(page).to have_no_selector "tr#li_#{li3.id}"
+        expect(page).to have_selector "tr#li_#{li3.id}"
+        expect(page).to have_no_selector "tr#li_#{li4.id}"
       end
 
       it "displays only line items whose orders meet the date restriction criteria, when changed" do
-        fill_in "start_date_filter", :with => (Date.current - 9).strftime("%F")
-        expect(page).to have_selector "tr#li_#{li1.id}"
-        expect(page).to have_selector "tr#li_#{li2.id}"
-        expect(page).to have_no_selector "tr#li_#{li3.id}"
+        find('#start_date_filter').click
+        select_date(Time.zone.today - 8.days)
 
-        fill_in "end_date_filter", :with => (Date.current + 3).strftime("%F")
         expect(page).to have_selector "tr#li_#{li1.id}"
         expect(page).to have_selector "tr#li_#{li2.id}"
         expect(page).to have_selector "tr#li_#{li3.id}"
+        expect(page).to have_no_selector "tr#li_#{li4.id}"
+
+        find('#end_date_filter').click
+        select_date(Time.zone.today + 1.day)
+
+        expect(page).to have_selector "tr#li_#{li1.id}"
+        expect(page).to have_selector "tr#li_#{li2.id}"
+        expect(page).to have_selector "tr#li_#{li3.id}"
+        expect(page).to have_selector "tr#li_#{li4.id}"
       end
 
       context "when the form is dirty" do
@@ -534,6 +567,7 @@ feature %q{
       context "when a filter has been applied" do
         it "only toggles checkboxes which are in filteredLineItems" do
           fill_in "quick_search", with: o1.number
+          expect(page).to have_no_selector "tr#li_#{li2.id}"
           check "toggle_bulk"
           fill_in "quick_search", with: ''
           expect(find("tr#li_#{li1.id} input[type='checkbox'][name='bulk']").checked?).to be true
@@ -544,11 +578,13 @@ feature %q{
         it "only applies the delete action to filteredLineItems" do
           check "toggle_bulk"
           fill_in "quick_search", with: o1.number
+          expect(page).to have_no_selector "tr#li_#{li2.id}"
           find("div#bulk-actions-dropdown").click
           find("div#bulk-actions-dropdown div.menu_item", :text => "Delete Selected" ).click
-          fill_in "quick_search", with: ''
           expect(page).to have_no_selector "tr#li_#{li1.id}"
+          fill_in "quick_search", with: ''
           expect(page).to have_selector "tr#li_#{li2.id}"
+          expect(page).to have_no_selector "tr#li_#{li1.id}"
         end
       end
     end
@@ -600,7 +636,9 @@ feature %q{
 
         it "removes a line item when the relevant delete button is clicked" do
           expect(page).to have_selector "a.delete-line-item", :count => 2
-          find("tr#li_#{li1.id} a.delete-line-item").click
+          accept_alert do
+            find("tr#li_#{li1.id} a.delete-line-item").click
+          end
           expect(page).to have_no_selector "a.delete-line-item", :count => 2
           expect(page).to have_selector "a.delete-line-item", :count => 1
           visit '/admin/orders/bulk_management'
@@ -702,5 +740,14 @@ feature %q{
       expect(page).to have_selector "tr#li_#{line_item_distributed.id}", :visible => true
       expect(page).to have_no_selector "tr#li_#{line_item_not_distributed.id}", :visible => true
     end
+  end
+
+  def select_date(date)
+    # Wait for datepicker to open and be associated to the datepicker trigger.
+    expect(page).to have_selector("#ui-datepicker-div")
+
+    navigate_datepicker_to_month date
+
+    find('#ui-datepicker-div .ui-datepicker-calendar .ui-state-default', text: date.strftime("%e").to_s.strip, exact_text: true).click
   end
 end

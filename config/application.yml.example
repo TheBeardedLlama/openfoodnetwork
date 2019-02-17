@@ -4,6 +4,9 @@
 # Minimum 30 but usually 128 characters. To obtain run 'rake secret', or faster, 'openssl rand -hex 128'
 SECRET_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
+# Time zone must match the operating system time zone in order to pass all tests.
+# This string is the key for the MAPPING hash constant in ActiveSupport::TimeZone.
+# Documentation including the hash: https://api.rubyonrails.org/classes/ActiveSupport/TimeZone.html
 TIMEZONE: Melbourne
 # Default country for dropdowns etc. See for codes: http://en.wikipedia.org/wiki/ISO_3166-1
 DEFAULT_COUNTRY_CODE: AU
@@ -16,6 +19,24 @@ CHECKOUT_ZONE: Australia
 # Find currency codes at http://en.wikipedia.org/wiki/ISO_4217.
 CURRENCY: AUD
 
+# The whenever gem can set the `MAILTO` variable for our cron jobs.
+# You can define an email address to notify if any job outputs something.
+# But you need a working mail server setup so that the message is delivered.
+# See: config/schedule.rb
+#SCHEDULE_NOTIFICATIONS: admin@example.com
+
+# Mail settings
+MAIL_HOST: 'example.com'
+MAIL_DOMAIN: 'example.com'
+MAIL_PORT: 25
+SMTP_USERNAME: 'ofn'
+SMTP_PASSWORD: 'f00d'
+
+# Optional mail settings
+# MAIL_SECURE_CONNECTION: 'TLS' # 'None' (default), 'SSL' or 'TLS'
+# MAILS_FROM: hello@example.com
+# MAIL_BCC: manager@example.com
+
 # SingleSignOn login for Discourse
 #
 # DISCOURSE_SSO_SECRET should be a random string. It must be the same as provided to your Discourse instance.
@@ -26,6 +47,12 @@ CURRENCY: AUD
 
 # see: https://developers.google.com/maps/documentation/javascript/get-api-key
 # GOOGLE_MAPS_API_KEY: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# optional, see: https://www.skylight.io/oss
+# SKYLIGHT_AUTHENTICATION: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Should be set if using Skylight, adds a link to Skylight dashboard to our footer
+# SKYLIGHT_PUBLIC_DASHBOARD_URL: "https://oss.skylight.io/app/applications/xxxxxxxxxx"
 
 # Stripe Connect details for instance account
 # Find these under 'API keys' and 'Connect' in your Stripe account dashboard -> Account Settings

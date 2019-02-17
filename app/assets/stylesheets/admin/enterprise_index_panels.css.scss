@@ -1,34 +1,10 @@
+@import "variables";
+
 .enterprise_package_panel, .enterprise_producer_panel {
   .info {
     p {
       font-size: 1rem;
       margin: 10px 0px;
-    }
-  }
-
-  a.update {
-    cursor: pointer;
-    margin-bottom: 10px;
-    font-size: 1.3rem;
-    background-color: #DA5354;
-    &:hover {
-      background-color: #CD4E4F;
-    }
-    &.disabled {
-      background-color: #C1C1C1;
-    }
-    &.saving {
-      background-color: #FF9848;
-      i.icon-refresh {
-        -webkit-animation: spin 2s infinite linear;
-        animation: spin 2s infinite linear;
-      }
-    }
-    span{
-      i{
-        font-size: 1.5rem;
-        margin-left: 10px;
-      }
     }
   }
 
@@ -45,7 +21,7 @@
     }
     &:hover {
       &:after {
-        border-top-color: #9fc820;
+        border-top-color: $spree-green;
       }
     }
     &.disabled{
@@ -86,7 +62,7 @@
   .status-ok {
     margin: 30px 0px;
     i.icon-ok-sign {
-      color: #9fc820;
+      color: $spree-green;
       font-size: 1.5rem;
     }
   }
@@ -102,7 +78,7 @@
       font-size: 1.5rem;
 
       &.issue{
-        color: #da5354;
+        color: $warning-red;
       }
 
       &.warning{

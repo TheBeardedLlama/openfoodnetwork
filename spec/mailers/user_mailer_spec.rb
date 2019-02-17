@@ -1,6 +1,8 @@
 require 'spec_helper'
 
 describe Spree::UserMailer do
+  include OpenFoodNetwork::EmailHelper
+
   let(:user) { build(:user) }
 
   after do
@@ -11,11 +13,36 @@ describe Spree::UserMailer do
     ActionMailer::Base.delivery_method = :test
     ActionMailer::Base.perform_deliveries = true
     ActionMailer::Base.deliveries = []
+
+    setup_email
   end
 
-  it "sends an email when given a user" do
-    Spree::UserMailer.signup_confirmation(user).deliver
-    ActionMailer::Base.deliveries.count.should == 1
+  describe '#signup_confirmation' do
+    it "sends email when given a user" do
+      Spree::UserMailer.signup_confirmation(user).deliver
+      expect(ActionMailer::Base.deliveries.count).to eq(1)
+    end
+
+    describe "user locale" do
+      around do |example|
+        original_default_locale = I18n.default_locale
+        I18n.default_locale = 'pt'
+        example.run
+        I18n.default_locale = original_default_locale
+      end
+
+      it "sends email in user locale when user locale is defined" do
+        user.locale = 'es'
+        Spree::UserMailer.signup_confirmation(user).deliver
+        expect(ActionMailer::Base.deliveries.first.body).to include "Gracias por unirte"
+      end
+
+      it "sends email in default locale when user locale is not available" do
+        user.locale = 'cn'
+        Spree::UserMailer.signup_confirmation(user).deliver
+        expect(ActionMailer::Base.deliveries.first.body).to include "Obrigada por juntar-se"
+      end
+    end
   end
 
   # adapted from https://github.com/spree/spree_auth_devise/blob/70737af/spec/mailers/user_mailer_spec.rb

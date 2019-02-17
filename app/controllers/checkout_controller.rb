@@ -1,4 +1,4 @@
-require 'open_food_network/last_used_address'
+require 'open_food_network/address_finder'
 
 class CheckoutController < Spree::CheckoutController
   layout 'darkswarm'
@@ -18,7 +18,7 @@ class CheckoutController < Spree::CheckoutController
     # This is only required because of spree_paypal_express. If we implement
     # a version of paypal that uses this controller, and more specifically
     # the #update_failed method, then we can remove this call
-    restart_checkout
+    RestartCheckout.new(@order).call
   end
 
   def update
@@ -84,7 +84,6 @@ class CheckoutController < Spree::CheckoutController
       customer_bill_address_id = @order.customer.bill_address.andand.id
       @order.customer.update_attributes(bill_address_attributes: new_bill_address.merge('id' => customer_bill_address_id))
     end
-
   end
 
   def set_default_ship_address
@@ -133,7 +132,6 @@ class CheckoutController < Spree::CheckoutController
   def advance_order_state(order)
     tries ||= 3
     order.next
-
   rescue ActiveRecord::StaleObjectError
     retry unless (tries -= 1).zero?
     false
@@ -141,7 +139,8 @@ class CheckoutController < Spree::CheckoutController
 
   def update_failed
     clear_ship_address
-    restart_checkout
+    RestartCheckout.new(@order).call
+
     respond_to do |format|
       format.html do
         render :edit
@@ -160,15 +159,6 @@ class CheckoutController < Spree::CheckoutController
     end
   end
 
-  def restart_checkout
-    return if @order.state == 'cart'
-    @order.restart_checkout! # resets state to 'cart'
-    @order.update_attributes!(shipping_method_id: nil)
-    @order.shipments.with_state(:pending).destroy_all
-    @order.payments.with_state(:checkout).destroy_all
-    @order.reload
-  end
-
   def skip_state_validation?
     true
   end
@@ -185,16 +175,10 @@ class CheckoutController < Spree::CheckoutController
   def before_address
     associate_user
 
-    lua = OpenFoodNetwork::LastUsedAddress.new(@order.email)
-    last_used_bill_address = lua.last_used_bill_address.andand.clone
-    last_used_ship_address = lua.last_used_ship_address.andand.clone
+    finder = OpenFoodNetwork::AddressFinder.new(@order.email, @order.customer, spree_current_user)
 
-    preferred_bill_address, preferred_ship_address = spree_current_user.bill_address, spree_current_user.ship_address if spree_current_user
-
-    customer_preferred_bill_address, customer_preferred_ship_address = @order.customer.bill_address, @order.customer.ship_address if @order.customer
-
-    @order.bill_address ||= customer_preferred_bill_address || preferred_bill_address || last_used_bill_address || Spree::Address.default
-    @order.ship_address ||= customer_preferred_ship_address || preferred_ship_address || last_used_ship_address || Spree::Address.default
+    @order.bill_address = finder.bill_address
+    @order.ship_address = finder.ship_address
   end
 
   # Overriding Spree's methods
@@ -216,7 +200,7 @@ class CheckoutController < Spree::CheckoutController
     payment_method = Spree::PaymentMethod.find(params[:order][:payments_attributes].first[:payment_method_id])
     return unless payment_method.kind_of?(Spree::Gateway::PayPalExpress)
 
-    render json: {path: spree.paypal_express_url(payment_method_id: payment_method.id)}, status: 200
+    render json: {path: spree.paypal_express_path(payment_method_id: payment_method.id)}, status: 200
     true
   end
 

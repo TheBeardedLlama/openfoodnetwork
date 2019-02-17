@@ -193,6 +193,22 @@ module Spree
           expect { product.delete }.to change { distributor.reload.updated_at }
         end
       end
+
+      it "adds the primary taxon to the product's taxon list" do
+        taxon = create(:taxon)
+        product = create(:product, primary_taxon: taxon)
+
+        expect(product.taxons).to include(taxon)
+      end
+
+      it "removes the previous primary taxon from the taxon list" do
+        original_taxon = create(:taxon)
+        product = create(:product, primary_taxon: original_taxon)
+        product.primary_taxon = create(:taxon)
+        product.save!
+
+        expect(product.taxons).not_to include(original_taxon)
+      end
     end
 
     describe "scopes" do
@@ -339,7 +355,7 @@ module Spree
           p1 = create(:product)
           p2 = create(:product)
           p3 = create(:product)
-          oc2 = create(:simple_order_cycle, suppliers: [s], distributors: [d2], variants: [p2.master], orders_close_at: 1.day.ago)
+          oc2 = create(:simple_order_cycle, suppliers: [s], distributors: [d2], variants: [p2.master], orders_open_at: 8.days.ago, orders_close_at: 1.day.ago)
           oc2 = create(:simple_order_cycle, suppliers: [s], distributors: [d3], variants: [p3.master], orders_close_at: Date.tomorrow)
           Product.in_an_active_order_cycle.should == [p3]
         end
@@ -386,6 +402,26 @@ module Spree
         it "lists any products with variants that are listed as visible=true" do
           expect(products).to include visible_variant.product
           expect(products).to_not include new_variant.product, hidden_variant.product
+        end
+      end
+
+      describe 'stockable_by' do
+        let(:shop) { create(:distributor_enterprise) }
+        let(:add_to_oc_producer) { create(:supplier_enterprise) }
+        let(:other_producer) { create(:supplier_enterprise) }
+        let!(:p1) { create(:simple_product, supplier: shop ) }
+        let!(:p2) { create(:simple_product, supplier: add_to_oc_producer ) }
+        let!(:p3) { create(:simple_product, supplier: other_producer ) }
+
+        before do
+          create(:enterprise_relationship, parent: add_to_oc_producer, child: shop, permissions_list: [:add_to_order_cycle])
+          create(:enterprise_relationship, parent: other_producer, child: shop, permissions_list: [:manage_products])
+        end
+
+        it 'shows products produced by the enterprise and any producers granting P-OC' do
+          stockable_products = Spree::Product.stockable_by(shop)
+          expect(stockable_products).to include p1, p2
+          expect(stockable_products).to_not include p3
         end
       end
     end
@@ -512,7 +548,8 @@ module Spree
         let!(:p) { create(:simple_product,
                           variant_unit: 'weight',
                           variant_unit_scale: 1,
-                          variant_unit_name: nil) }
+                          variant_unit_name: nil)
+        }
 
         let!(:ot_volume) { create(:option_type, name: 'unit_volume', presentation: 'Volume') }
 
@@ -674,6 +711,47 @@ module Spree
         e.variants << v
         p.delete
         e.variants(true).should be_empty
+      end
+    end
+  end
+
+  describe "product import" do
+    describe "finding the most recent import date of the variants" do
+      let!(:product) { create(:product) }
+
+      let(:reference_time) { Time.zone.now.beginning_of_day }
+
+      before do
+        product.reload
+      end
+
+      context "when the variants do not have an import date" do
+        let!(:variant_a) { create(:variant, product: product, import_date: nil) }
+        let!(:variant_b) { create(:variant, product: product, import_date: nil) }
+
+        it "returns nil" do
+          expect(product.import_date).to be_nil
+        end
+      end
+
+      context "when some variants have import date and some do not" do
+        let!(:variant_a) { create(:variant, product: product, import_date: nil) }
+        let!(:variant_b) { create(:variant, product: product, import_date: reference_time - 1.hour) }
+        let!(:variant_c) { create(:variant, product: product, import_date: reference_time - 2.hour) }
+
+        it "returns the most recent import date" do
+          expect(product.import_date).to eq(variant_b.import_date)
+        end
+      end
+
+      context "when all variants have import date" do
+        let!(:variant_a) { create(:variant, product: product, import_date: reference_time - 2.hour) }
+        let!(:variant_b) { create(:variant, product: product, import_date: reference_time - 1.hour) }
+        let!(:variant_c) { create(:variant, product: product, import_date: reference_time - 3.hour) }
+
+        it "returns the most recent import date" do
+          expect(product.import_date).to eq(variant_b.import_date)
+        end
       end
     end
   end

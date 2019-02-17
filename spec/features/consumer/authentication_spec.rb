@@ -2,6 +2,7 @@ require 'spec_helper'
 
 feature "Authentication", js: true, retry: 3 do
   include UIComponentHelper
+  include OpenFoodNetwork::EmailHelper
 
   # Attempt to address intermittent failures in these specs
   around do |example|
@@ -75,14 +76,15 @@ feature "Authentication", js: true, retry: 3 do
           end
 
           scenario "Signing up successfully" do
+            setup_email
             fill_in "Email", with: "test@foo.com"
             fill_in "Choose a password", with: "test12345"
             fill_in "Confirm password", with: "test12345"
+
             expect do
               click_signup_button
-              page.should have_content "Welcome! You have signed up successfully"
-            end.to enqueue_job ConfirmSignupJob
-            page.should be_logged_in_as "test@foo.com"
+              expect(page).to have_content I18n.t('devise.user_registrations.spree_user.signed_up_but_unconfirmed')
+            end.to send_confirmation_instructions
           end
         end
 
@@ -112,11 +114,22 @@ feature "Authentication", js: true, retry: 3 do
         before do
           browse_as_medium
         end
+        after do
+          browse_as_large
+        end
         scenario "showing login" do
           open_off_canvas
           open_login_modal
           page.should have_login_modal
         end
+      end
+    end
+
+    describe "after following email confirmation link" do
+      scenario "shows confirmed message in modal" do
+        visit '/#/login?validation=confirmed'
+        expect(page).to have_login_modal
+        expect(page).to have_content I18n.t('devise.confirmations.confirmed')
       end
     end
 

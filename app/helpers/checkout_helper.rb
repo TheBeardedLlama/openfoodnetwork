@@ -45,7 +45,7 @@ module CheckoutHelper
 
   def display_checkout_taxes_hash(order)
     order.tax_adjustment_totals.each_with_object(Hash.new) do |(tax_rate, tax_amount), hash|
-      hash[number_to_percentage(tax_rate * 100, :precision => 1)] = Spree::Money.new tax_amount, currency: order.currency
+      hash[number_to_percentage(tax_rate.amount * 100, :precision => 1)] = Spree::Money.new tax_amount, currency: order.currency
     end
   end
 
@@ -54,7 +54,7 @@ module CheckoutHelper
   end
 
   def display_adjustment_tax_rates(adjustment)
-    tax_rates = adjustment.tax_rates
+    tax_rates = TaxRateFinder.tax_rates_of(adjustment)
     tax_rates.map { |tr| number_to_percentage(tr.amount * 100, :precision => 1) }.join(", ")
   end
 
@@ -64,20 +64,6 @@ module CheckoutHelper
 
   def display_checkout_total_less_tax(order)
     Spree::Money.new order.total - order.total_tax, currency: order.currency
-  end
-
-  def checkout_state_options(source_address)
-    if source_address == :billing
-      address = @order.billing_address
-    elsif source_address == :shipping
-      address = @order.shipping_address
-    end
-
-    [[]] + address.country.states.map { |c| [c.name, c.id] }
-  end
-
-  def checkout_country_options
-    available_countries.map { |c| [c.name, c.id] }
   end
 
   def validated_input(name, path, args = {})

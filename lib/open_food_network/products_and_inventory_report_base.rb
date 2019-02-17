@@ -1,10 +1,13 @@
+require 'open_food_network/scope_variant_to_hub'
+
 module OpenFoodNetwork
   class ProductsAndInventoryReportBase
     attr_reader :params
 
-    def initialize(user, params = {})
+    def initialize(user, params = {}, render_table = false)
       @user = user
       @params = params
+      @render_table = render_table
     end
 
     def permissions
@@ -28,16 +31,18 @@ module OpenFoodNetwork
     end
 
     def filter(variants)
-      filter_to_distributor filter_to_order_cycle filter_on_hand filter_to_supplier filter_not_deleted variants
+      filter_on_hand filter_to_distributor filter_to_order_cycle filter_to_supplier filter_not_deleted variants
     end
 
     def filter_not_deleted(variants)
       variants.not_deleted
     end
 
+    # Using the `in_stock?` method allows overrides by distributors.
+    # It also allows the upgrade to Spree 2.0.
     def filter_on_hand(variants)
       if params[:report_type] == 'inventory'
-        variants.where('spree_variants.count_on_hand > 0')
+        variants.select(&:in_stock?)
       else
         variants
       end

@@ -3,7 +3,7 @@
     .three.columns.alpha
       = f.label "enterprise_preferred_shopfront_message", t('.shopfront_message')
     .eight.columns.omega
-      %text-angular{'ng-model' => 'Enterprise.preferred_shopfront_message', 'id' => 'enterprise_preferred_shopfront_message', 'name' => 'enterprise[preferred_shopfront_message]', 'class' => 'text-angular',
+      %text-angular{'ng-model' => 'Enterprise.preferred_shopfront_message', 'id' => 'enterprise_preferred_shopfront_message', 'name' => 'enterprise[preferred_shopfront_message]', 'class' => 'text-angular', "textangular-links-target-blank" => true,
         'ta-toolbar' => "[['h1','h2','h3','h4','p'],['bold','italics','underline','clear'],['insertLink']]",
         'placeholder' => t('.shopfront_message_placeholder')}
 .row
@@ -11,7 +11,7 @@
     .three.columns.alpha
       = f.label "enterprise_preferred_shopfront_closed_message", t('.shopfront_closed_message')
     .eight.columns.omega
-      %text-angular{'ng-model' => 'Enterprise.preferred_shopfront_closed_message', 'id' => 'enterprise_preferred_shopfront_closed_message', 'name' => 'enterprise[preferred_shopfront_closed_message]', 'class' => 'text-angular',
+      %text-angular{'ng-model' => 'Enterprise.preferred_shopfront_closed_message', 'id' => 'enterprise_preferred_shopfront_closed_message', 'name' => 'enterprise[preferred_shopfront_closed_message]', 'class' => 'text-angular', "textangular-links-target-blank" => true,
         'ta-toolbar' => "[['h1','h2','h3','h4','p'],['bold','italics','underline','clear'],['insertLink']]",
         'placeholder' => t('.shopfront_closed_message_placeholder')}
 .row
@@ -45,6 +45,7 @@
     .five.columns.omega
       = f.radio_button :require_login, true, "ng-model" => "Enterprise.require_login", "ng-value" => "true"
       = f.label :require_login, t('.shopfront_requires_login_true'), value: :true
+
 .row{ng: {if: "!Enterprise.require_login"}}
   .alpha.eleven.columns
     .three.columns.alpha
@@ -75,3 +76,17 @@
     .five.columns.omega
       = f.radio_button :allow_order_changes, true, "ng-model" => "Enterprise.allow_order_changes", "ng-value" => "true"
       = f.label :allow_order_changes, t('.allow_order_changes_true'), value: :true
+
+- if spree_current_user.admin?
+  .row
+    .alpha.eleven.columns
+      .three.columns.alpha
+        %label= t '.enable_subscriptions'
+        %div{'ofn-with-tip' => t('.enable_subscriptions_tip')}
+          %a= t 'admin.whats_this'
+      .three.columns
+        = f.radio_button :enable_subscriptions, true
+        = f.label :enable_subscriptions, t('.enable_subscriptions_true'), value: :true
+      .five.columns.omega
+        = f.radio_button :enable_subscriptions, false
+        = f.label :enable_subscriptions, t('.enable_subscriptions_false'), value: :false

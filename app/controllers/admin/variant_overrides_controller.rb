@@ -3,6 +3,7 @@ require 'open_food_network/spree_api_key_loader'
 module Admin
   class VariantOverridesController < ResourceController
     include OpenFoodNetwork::SpreeApiKeyLoader
+    include EnterprisesHelper
 
     prepend_before_filter :load_data
     before_filter :load_collection, only: [:bulk_update]
@@ -55,6 +56,18 @@ module Admin
         variant_override_enterprises_per_hub
 
       @inventory_items = InventoryItem.where(enterprise_id: @hubs)
+      @import_dates = inventory_import_dates.uniq.to_json
+    end
+
+    def inventory_import_dates
+      import_dates = VariantOverride.
+        distinct_import_dates.
+        for_hubs(editable_enterprises.collect(&:id))
+
+      options = [{ id: '0', name: 'All' }]
+      import_dates.collect(&:import_date).map { |i| options.push(id: i.to_date, name: i.to_date.to_formatted_s(:long)) }
+
+      options
     end
 
     def load_collection

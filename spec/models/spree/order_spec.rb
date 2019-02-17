@@ -1,6 +1,8 @@
 require 'spec_helper'
 
 describe Spree::Order do
+  include OpenFoodNetwork::EmailHelper
+
   describe "setting variant attributes" do
     it "sets attributes on line items for variants" do
       d = create(:distributor_enterprise)
@@ -283,16 +285,19 @@ describe Spree::Order do
     let(:tax_rate10)      { create(:tax_rate, included_in_price: true, calculator: Spree::Calculator::DefaultTax.new, amount: 0.1, zone: zone) }
     let(:tax_rate15)      { create(:tax_rate, included_in_price: true, calculator: Spree::Calculator::DefaultTax.new, amount: 0.15, zone: zone) }
     let(:tax_rate20)      { create(:tax_rate, included_in_price: true, calculator: Spree::Calculator::DefaultTax.new, amount: 0.2, zone: zone) }
+    let(:tax_rate25)      { create(:tax_rate, included_in_price: true, calculator: Spree::Calculator::DefaultTax.new, amount: 0.25, zone: zone) }
     let(:tax_category10)  { create(:tax_category, tax_rates: [tax_rate10]) }
     let(:tax_category15)  { create(:tax_category, tax_rates: [tax_rate15]) }
     let(:tax_category20)  { create(:tax_category, tax_rates: [tax_rate20]) }
+    let(:tax_category25)  { create(:tax_category, tax_rates: [tax_rate25]) }
 
     let(:variant)         { create(:variant, product: create(:product, tax_category: tax_category10)) }
     let(:shipping_method) { create(:shipping_method, calculator: Spree::Calculator::FlatRate.new(preferred_amount: 46.0)) }
     let(:enterprise_fee)  { create(:enterprise_fee, enterprise: coordinator, tax_category: tax_category20, calculator: Spree::Calculator::FlatRate.new(preferred_amount: 48.0)) }
+    let(:additional_adjustment) { create(:adjustment, amount: 50.0, included_tax: tax_rate25.compute_tax(50.0)) }
 
     let(:order_cycle)     { create(:simple_order_cycle, coordinator: coordinator, coordinator_fees: [enterprise_fee], distributors: [coordinator], variants: [variant]) }
-    let!(:order)          { create(:order, shipping_method: shipping_method, bill_address: create(:address), order_cycle: order_cycle, distributor: coordinator) }
+    let!(:order)          { create(:order, shipping_method: shipping_method, bill_address: create(:address), order_cycle: order_cycle, distributor: coordinator, adjustments: [additional_adjustment]) }
     let!(:line_item)      { create(:line_item, order: order, variant: variant, price: 44.0) }
 
     before do
@@ -304,19 +309,23 @@ describe Spree::Order do
     end
 
     it "returns a hash with all 3 taxes" do
-      order.tax_adjustment_totals.size.should == 3
+      expect(order.tax_adjustment_totals.size).to eq(4)
     end
 
     it "contains tax on line_item" do
-      order.tax_adjustment_totals[tax_rate10.amount].should == 4.0
+      expect(order.tax_adjustment_totals[tax_rate10]).to eq(4.0)
     end
 
     it "contains tax on shipping_fee" do
-      order.tax_adjustment_totals[tax_rate15.amount].should == 6.0
+      expect(order.tax_adjustment_totals[tax_rate15]).to eq(6.0)
     end
 
     it "contains tax on enterprise_fee" do
-      order.tax_adjustment_totals[tax_rate20.amount].should == 8.0
+      expect(order.tax_adjustment_totals[tax_rate20]).to eq(8.0)
+    end
+
+    it "contains tax on order adjustment" do
+      expect(order.tax_adjustment_totals[tax_rate25]).to eq(10.0)
     end
   end
 
@@ -452,32 +461,32 @@ describe Spree::Order do
   context "validating distributor changes" do
     it "checks that a distributor is available when changing" do
       set_feature_toggle :order_cycles, false
-      order_enterprise = FactoryGirl.create(:enterprise, id: 1, :name => "Order Enterprise")
+      order_enterprise = FactoryBot.create(:enterprise, id: 1, :name => "Order Enterprise")
       subject.distributor = order_enterprise
-      product1 = FactoryGirl.create(:product)
-      product2 = FactoryGirl.create(:product)
-      product3 = FactoryGirl.create(:product)
-      variant11 = FactoryGirl.create(:variant, product: product1)
-      variant12 = FactoryGirl.create(:variant, product: product1)
-      variant21 = FactoryGirl.create(:variant, product: product2)
-      variant31 = FactoryGirl.create(:variant, product: product3)
-      variant32 = FactoryGirl.create(:variant, product: product3)
+      product1 = FactoryBot.create(:product)
+      product2 = FactoryBot.create(:product)
+      product3 = FactoryBot.create(:product)
+      variant11 = FactoryBot.create(:variant, product: product1)
+      variant12 = FactoryBot.create(:variant, product: product1)
+      variant21 = FactoryBot.create(:variant, product: product2)
+      variant31 = FactoryBot.create(:variant, product: product3)
+      variant32 = FactoryBot.create(:variant, product: product3)
 
       # Product Distributions
       # Order Enterprise sells product 1 and product 3
-      FactoryGirl.create(:product_distribution, product: product1, distributor: order_enterprise)
-      FactoryGirl.create(:product_distribution, product: product3, distributor: order_enterprise)
+      FactoryBot.create(:product_distribution, product: product1, distributor: order_enterprise)
+      FactoryBot.create(:product_distribution, product: product3, distributor: order_enterprise)
 
       # Build the current order
-      line_item1 = FactoryGirl.create(:line_item, order: subject, variant: variant11)
-      line_item2 = FactoryGirl.create(:line_item, order: subject, variant: variant12)
-      line_item3 = FactoryGirl.create(:line_item, order: subject, variant: variant31)
+      line_item1 = FactoryBot.create(:line_item, order: subject, variant: variant11)
+      line_item2 = FactoryBot.create(:line_item, order: subject, variant: variant12)
+      line_item3 = FactoryBot.create(:line_item, order: subject, variant: variant31)
       subject.reload
       subject.line_items = [line_item1,line_item2,line_item3]
 
-      test_enterprise = FactoryGirl.create(:enterprise, id: 2, :name => "Test Enterprise")
+      test_enterprise = FactoryBot.create(:enterprise, id: 2, :name => "Test Enterprise")
       # Test Enterprise sells only product 1
-      FactoryGirl.create(:product_distribution, product: product1, distributor: test_enterprise)
+      FactoryBot.create(:product_distribution, product: product1, distributor: test_enterprise)
 
       subject.distributor = test_enterprise
       subject.should_not be_valid
@@ -488,14 +497,11 @@ describe Spree::Order do
   describe "scopes" do
     describe "not_state" do
       before do
-        Spree::MailMethod.create!(
-          environment: Rails.env,
-          preferred_mails_from: 'spree@example.com'
-        )
+        setup_email
       end
 
       it "finds only orders not in specified state" do
-        o = FactoryGirl.create(:completed_order_with_totals)
+        o = FactoryBot.create(:completed_order_with_totals)
         o.cancel!
         Spree::Order.not_state(:canceled).should_not include o
       end
@@ -567,6 +573,14 @@ describe Spree::Order do
 
     it "does not send confirmation emails when distributor is the accounts_distributor" do
       Spree::Config.set({ accounts_distributor_id: distributor.id })
+
+      expect do
+        order.deliver_order_confirmation_email
+      end.to_not enqueue_job ConfirmOrderJob
+    end
+
+    it "does not send confirmation emails when the order belongs to a subscription" do
+      create(:proxy_order, order: order)
 
       expect do
         order.deliver_order_confirmation_email
@@ -655,6 +669,28 @@ describe Spree::Order do
           expect(order.customer.ship_address.same_as?(order.ship_address)).to be true
         end
       end
+    end
+  end
+
+  describe "when a guest order is placed with a registered email" do
+    let(:order) { create(:order_with_totals_and_distribution, user: nil) }
+    let(:payment_method) { create(:payment_method, distributors: [order.distributor]) }
+    let(:shipping_method) { create(:shipping_method, distributors: [order.distributor]) }
+    let(:user) { create(:user, email: 'registered@email.com') }
+
+    before do
+      order.bill_address = create(:address)
+      order.ship_address = create(:address)
+      order.shipping_method = shipping_method
+      order.email = user.email
+      order.user = nil
+      order.state = 'cart'
+    end
+
+    it "returns a validation error" do
+      expect{order.next}.to change(order.errors, :count).from(0).to(1)
+      expect(order.errors.messages[:base]).to eq [ I18n.t('devise.failure.already_registered') ]
+      expect(order.state).to eq 'cart'
     end
   end
 
@@ -774,11 +810,93 @@ describe Spree::Order do
   describe "determining checkout steps for an order" do
     let!(:enterprise) { create(:enterprise) }
     let!(:order) { create(:order, distributor: enterprise) }
-    let!(:payment_method) { create(:stripe_payment_method, distributor_ids: [enterprise.id], preferred_enterprise_id: enterprise.id) }
+    let!(:payment_method) { create(:stripe_payment_method, distributor_ids: [enterprise.id]) }
     let!(:payment) { create(:payment, order: order, payment_method: payment_method) }
 
     it "does not include the :confirm step" do
       expect(order.checkout_steps).to_not include "confirm"
+    end
+  end
+
+  describe "finding pending_payments" do
+    let!(:order) { create(:order ) }
+    let!(:payment) { create(:payment, order: order, state: 'checkout') }
+
+    context "when the order is not a subscription" do
+      it "returns the payments on the order" do
+        expect(order.reload.pending_payments).to eq [payment]
+      end
+    end
+
+    context "when the order is a subscription" do
+      let!(:proxy_order) { create(:proxy_order, order: order) }
+      let!(:order_cycle) { proxy_order.order_cycle }
+
+      context "and order_cycle has no order_close_at set" do
+        before { order.order_cycle.update_attributes(orders_close_at: nil) }
+
+        it "returns the payments on the order" do
+          expect(order.reload.pending_payments).to eq [payment]
+        end
+      end
+
+      context "and the order_cycle has closed" do
+        before { order.order_cycle.update_attributes(orders_close_at: 5.minutes.ago) }
+
+        it "returns the payments on the order" do
+          expect(order.reload.pending_payments).to eq [payment]
+        end
+      end
+
+      context "and the order_cycle has not yet closed" do
+        before { order.order_cycle.update_attributes(orders_close_at: 5.minutes.from_now) }
+
+        it "returns an empty array" do
+          expect(order.reload.pending_payments).to eq []
+        end
+      end
+    end
+  end
+
+  describe '#restart_checkout!' do
+    let(:order) { build(:order) }
+
+    context 'when the order is complete' do
+      before { order.completed_at = Time.zone.now }
+
+      it 'raises' do
+        expect { order.restart_checkout! }
+          .to raise_error(StateMachine::InvalidTransition)
+      end
+    end
+
+    context 'when the is not complete' do
+      before { order.completed_at = nil }
+
+      it 'transitions to :cart state' do
+        order.restart_checkout!
+        expect(order.state).to eq('cart')
+      end
+    end
+  end
+
+  describe '#charge_shipping_and_payment_fees!' do
+    let(:order) do
+      build(:order, shipping_method: build(:shipping_method))
+    end
+
+    context 'after transitioning to payment' do
+      before do
+        order.state = 'delivery' # payment's previous state
+
+        allow(order).to receive(:payment_required?) { true }
+        allow(order).to receive(:charge_shipping_and_payment_fees!)
+      end
+
+      it 'calls charge_shipping_and_payment_fees!' do
+        order.next
+        expect(order).to have_received(:charge_shipping_and_payment_fees!)
+      end
     end
   end
 end

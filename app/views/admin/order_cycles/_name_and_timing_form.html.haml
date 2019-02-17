@@ -10,7 +10,7 @@
     = f.label :orders_open_at, t('.orders_open')
   .omega.six.columns
     - if viewing_as_coordinator_of?(@order_cycle)
-      = f.text_field :orders_open_at, 'datetimepicker' => 'order_cycle.orders_open_at', 'ng-model' => 'order_cycle.orders_open_at', 'ng-disabled' => '!loaded()'
+      = f.text_field :orders_open_at, 'datetimepicker' => 'order_cycle.orders_open_at', 'ng-model' => 'order_cycle.orders_open_at', 'ng-disabled' => '!loaded()', 'change-warning' => 'order_cycle'
     - else
       {{ order_cycle.orders_open_at }}
 
@@ -23,6 +23,24 @@
     = f.label :orders_close, t('.orders_close')
   .six.columns.omega
     - if viewing_as_coordinator_of?(@order_cycle)
-      = f.text_field :orders_close_at, 'datetimepicker' => 'order_cycle.orders_close_at', 'ng-model' => 'order_cycle.orders_close_at', 'ng-disabled' => '!loaded()'
+      = f.text_field :orders_close_at, 'datetimepicker' => 'order_cycle.orders_close_at', 'ng-model' => 'order_cycle.orders_close_at', 'ng-disabled' => '!loaded()', 'change-warning' => 'order_cycle'
     - else
       {{ order_cycle.orders_close_at }}
+
+
+- if subscriptions_enabled?
+  .row
+    .two.columns.alpha
+      = f.label :schedule_ids, t('admin.order_cycles.index.schedules')
+    .twelve.columns
+      - if viewing_as_coordinator_of?(@order_cycle)
+        %input.fullwidth.ofn-select2#schedule_ids{ name: 'order_cycle[schedule_ids]',
+          data: 'schedules',
+          multiple: 'true',
+          placeholder: t('admin.please_select'),
+          filter: '{viewing_as_coordinator: true}',
+          ng: { model: 'order_cycle.schedule_ids' } }
+      - else
+        %schedule-list{ 'order-cycle' => 'order_cycle' }
+    .two.columns.omega
+      &nbsp;

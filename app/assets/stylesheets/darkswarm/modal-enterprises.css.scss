@@ -133,8 +133,6 @@
     font-size: 0.875rem;
     margin-bottom: 0.75rem;
 
-    5rem {}
-
     color: $dark-grey;
   }
 
@@ -158,13 +156,6 @@
 
     &.primary {
       color: $clr-brick;
-    }
-
-    i.ofn-i_033-open-sign, i.ofn-i_032-closed-sign {
-      margin-right: 0.1rem;
-      font-size: 2rem;
-      padding: 0.15rem 0.25rem 0.35rem 0.25rem;
-      float: left;
     }
 
     .hub-name {

@@ -1,4 +1,4 @@
-angular.module("admin.customers").controller "customersCtrl", ($scope, $q, $filter, Customers, TagRuleResource, CurrentShop, RequestMonitor, Columns, pendingChanges, shops, availableCountries) ->
+angular.module("admin.customers").controller "customersCtrl", ($scope, $q, $filter, Customers, TagRuleResource, CurrentShop, RequestMonitor, Columns, SortOptions, pendingChanges, shops, availableCountries) ->
   $scope.shops = shops
   $scope.availableCountries = availableCountries
   $scope.RequestMonitor = RequestMonitor
@@ -6,13 +6,14 @@ angular.module("admin.customers").controller "customersCtrl", ($scope, $q, $filt
   $scope.customerLimit = 20
   $scope.customers = Customers.all
   $scope.columns = Columns.columns
+  $scope.sorting = SortOptions
 
   $scope.confirmRefresh = (event) ->
     event.preventDefault() unless pendingChanges.unsavedCount() == 0 || confirm(t("unsaved_changes_warning"))
 
   $scope.$watch "shop_id", ->
     if $scope.shop_id?
-      CurrentShop.shop = $filter('filter')($scope.shops, {id: $scope.shop_id})[0]
+      CurrentShop.shop = $filter('filter')($scope.shops, {id: parseInt($scope.shop_id)}, true)[0]
       Customers.index({enterprise_id: $scope.shop_id}).then (data) ->
         pendingChanges.removeAll()
         $scope.customers_form.$setPristine()

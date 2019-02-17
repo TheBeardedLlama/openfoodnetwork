@@ -3,11 +3,12 @@ require "cancan/matchers"
 require 'support/cancan_helper'
 
 module Spree
-
   describe User do
-
     describe "broad permissions" do
       subject { AbilityDecorator.new(user) }
+
+      include ::AbilityHelper
+
       let(:user) { create(:user) }
       let(:enterprise_any) { create(:enterprise, sells: 'any') }
       let(:enterprise_own) { create(:enterprise, sells: 'own') }
@@ -148,18 +149,18 @@ module Spree
         let(:order) { create(:order) }
 
         it "should be able to read/write their enterprises' products and variants" do
-          should have_ability([:admin, :read, :update, :product_distributions, :bulk_edit, :bulk_update, :clone, :destroy], for: p1)
+          should have_ability([:admin, :read, :update, :product_distributions, :bulk_update, :clone, :destroy], for: p1)
           should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy, :delete], for: p1.master)
         end
 
         it "should be able to read/write related enterprises' products and variants with manage_products permission" do
           er_ps
-          should have_ability([:admin, :read, :update, :product_distributions, :bulk_edit, :bulk_update, :clone, :destroy], for: p_related)
+          should have_ability([:admin, :read, :update, :product_distributions, :bulk_update, :clone, :destroy], for: p_related)
           should have_ability([:admin, :index, :read, :edit, :update, :search, :destroy, :delete], for: p_related.master)
         end
 
         it "should not be able to read/write other enterprises' products and variants" do
-          should_not have_ability([:admin, :read, :update, :product_distributions, :bulk_edit, :bulk_update, :clone, :destroy], for: p2)
+          should_not have_ability([:admin, :read, :update, :product_distributions, :bulk_update, :clone, :destroy], for: p2)
           should_not have_ability([:admin, :index, :read, :edit, :update, :search, :destroy], for: p2.master)
         end
 
@@ -215,6 +216,8 @@ module Spree
         it "should be able to read some reports" do
           should have_ability([:admin, :index, :customers, :bulk_coop, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management], for: :report)
         end
+
+        include_examples "allows access to Enterprise Fee Summary only if feature flag enabled"
 
         it "should not be able to read other reports" do
           should_not have_ability([:sales_total, :group_buys, :payments, :orders_and_distributors, :users_and_enterprises, :xero_invoices], for: :report)
@@ -298,11 +301,11 @@ module Spree
           let!(:er_pd) { create(:enterprise_relationship, parent: d_related, child: d1, permissions_list: [:edit_profile]) }
 
           it "should be able to edit enterprises it manages" do
-            should have_ability([:read, :edit, :update, :bulk_update, :resend_confirmation], for: d1)
+            should have_ability([:read, :edit, :update, :remove_logo, :remove_promo_image, :bulk_update, :resend_confirmation], for: d1)
           end
 
           it "should be able to edit enterprises it has permission to" do
-            should have_ability([:read, :edit, :update, :bulk_update, :resend_confirmation], for: d_related)
+            should have_ability([:read, :edit, :update, :remove_logo, :remove_promo_image, :bulk_update, :resend_confirmation], for: d_related)
           end
 
           it "should be able to manage shipping methods, payment methods and enterprise fees for enterprises it manages" do
@@ -406,6 +409,8 @@ module Spree
         it "should be able to read some reports" do
           should have_ability([:admin, :index, :customers, :sales_tax, :group_buys, :bulk_coop, :payments, :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :xero_invoices], for: :report)
         end
+
+        include_examples "allows access to Enterprise Fee Summary only if feature flag enabled"
 
         it "should not be able to read other reports" do
           should_not have_ability([:sales_total, :users_and_enterprises], for: :report)
@@ -512,6 +517,90 @@ module Spree
 
         it 'should have the ability to view the admin account page' do
           should have_ability([:admin, :show], for: :account)
+        end
+      end
+    end
+
+    describe "permissions for variant overrides" do
+      let!(:distributor) { create(:distributor_enterprise) }
+      let!(:producer) { create(:supplier_enterprise) }
+      let!(:product) { create(:product, supplier: producer) }
+      let!(:variant) { create(:variant, product: product) }
+      let!(:variant_override) { create(:variant_override, hub: distributor, variant: variant) }
+
+      subject { user }
+
+      let(:manage_actions) { [:admin, :index, :read, :update, :bulk_update, :bulk_reset] }
+
+      describe "when admin" do
+        let(:user) { create(:admin_user) }
+
+        it "should have permission" do
+          is_expected.to have_ability(manage_actions, for: variant_override)
+        end
+      end
+
+      describe "when user of the producer" do
+        let(:user) { producer.owner }
+
+        it "should not have permission" do
+          is_expected.not_to have_ability(manage_actions, for: variant_override)
+        end
+      end
+
+      describe "when user of the distributor" do
+        let(:user) { distributor.owner }
+
+        it "should not have permission" do
+          is_expected.not_to have_ability(manage_actions, for: variant_override)
+        end
+      end
+
+      describe "when user of the distributor which is also the producer" do
+        let(:user) { distributor.owner }
+        let!(:distributor) { create(:distributor_enterprise, is_primary_producer: true, sells: "any") }
+        let!(:producer) { distributor }
+
+        it "should have permission" do
+          is_expected.to have_ability(manage_actions, for: variant_override)
+        end
+      end
+
+      describe "when owner of the distributor with add_to_order_cycle permission to the producer" do
+        let!(:unauthorized_enterprise) do
+          create(:enterprise, sells: "any").tap do |record|
+            create(:enterprise_relationship, parent: producer, child: record, permissions_list: [:add_to_order_cycle])
+          end
+        end
+        let(:user) { unauthorized_enterprise.owner }
+
+        it "should not have permission" do
+          is_expected.not_to have_ability(manage_actions, for: variant_override)
+        end
+      end
+
+      describe "when owner of the enterprise with create_variant_overrides permission to the producer" do
+        let!(:authorized_enterprise) do
+          create(:enterprise, sells: "any").tap do |record|
+            create(:enterprise_relationship, parent: producer, child: record, permissions_list: [:create_variant_overrides])
+          end
+        end
+        let(:user) { authorized_enterprise.owner }
+
+        it "should not have permission" do
+          is_expected.not_to have_ability(manage_actions, for: variant_override)
+        end
+
+        describe "when the enterprise is not a distributor" do
+          let!(:authorized_enterprise) do
+            create(:enterprise, sells: "none").tap do |record|
+              create(:enterprise_relationship, parent: producer, child: record, permissions_list: [:create_variant_overrides])
+            end
+          end
+
+          it "should not have permission" do
+            is_expected.not_to have_ability(manage_actions, for: variant_override)
+          end
         end
       end
     end

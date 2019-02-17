@@ -1,17 +1,18 @@
 angular.module("admin.enterprises")
-  .controller "enterpriseCtrl", ($scope, $window, NavigationCheck, enterprise, EnterprisePaymentMethods, EnterpriseShippingMethods, SideMenu, StatusMessage) ->
+  .controller "enterpriseCtrl", ($scope, $http, $window, NavigationCheck, enterprise, Enterprises, EnterprisePaymentMethods, EnterpriseShippingMethods, SideMenu, StatusMessage) ->
     $scope.Enterprise = enterprise
     $scope.PaymentMethods = EnterprisePaymentMethods.paymentMethods
     $scope.ShippingMethods = EnterpriseShippingMethods.shippingMethods
     $scope.navClear = NavigationCheck.clear
-    $scope.pristineEmail = $scope.Enterprise.email
     $scope.menu = SideMenu
-    $scope.newManager = { id: '', email: (t('add_manager')) }
-
+    $scope.newManager = { id: null, email: (t('add_manager')) }
     $scope.StatusMessage = StatusMessage
 
     $scope.$watch 'enterprise_form.$dirty', (newValue) ->
       StatusMessage.display 'notice', t('admin.unsaved_changes') if newValue
+
+    $scope.$watch 'newManager', (newValue) ->
+      $scope.addManager($scope.newManager) if newValue
 
     $scope.setFormDirty = ->
       $scope.$apply ->
@@ -28,7 +29,7 @@ angular.module("admin.enterprises")
     # from a directive "nav-check" in the page - if we pass it here it will be called in the test suite,
     # and on all new uses of this contoller, and we might not want that.
     enterpriseNavCallback = ->
-      if $scope.enterprise_form.$dirty
+      if $scope.enterprise_form != undefined && $scope.enterprise_form.$dirty
         t('admin.unsaved_confirm_leave')
 
     # Register the NavigationCheck callback
@@ -36,17 +37,57 @@ angular.module("admin.enterprises")
 
     $scope.removeManager = (manager) ->
       if manager.id?
+        if manager.id == $scope.Enterprise.owner.id or manager.id == parseInt($scope.receivesNotifications)
+          return
         for i, user of $scope.Enterprise.users when user.id == manager.id
           $scope.Enterprise.users.splice i, 1
-        if $scope.enterprise_form?
-          $scope.enterprise_form.$setDirty()
+          $scope.enterprise_form?.$setDirty()
 
     $scope.addManager = (manager) ->
-      if manager.id? and manager.email?
+      if manager.id? and angular.isNumber(manager.id) and manager.email?
         manager =
           id: manager.id
           email: manager.email
+          confirmed: manager.confirmed
         if (user for user in $scope.Enterprise.users when user.id == manager.id).length == 0
-          $scope.Enterprise.users.push manager
+          $scope.Enterprise.users.unshift(manager)
+          $scope.enterprise_form?.$setDirty()
         else
           alert ("#{manager.email}" + " " + t("is_already_manager"))
+
+    $scope.inviteManager = ->
+      $scope.invite_errors = $scope.invite_success = null
+      email = $scope.newUser
+
+      $http.post("/admin/manager_invitations", {email: email, enterprise_id: $scope.Enterprise.id}).success (data)->
+          $scope.addManager({id: data.user, email: email})
+          $scope.invite_success = t('user_invited', email: email)
+        .error (data) ->
+          $scope.invite_errors = data.errors
+
+    $scope.resetModal = ->
+      $scope.newUser = $scope.invite_errors = $scope.invite_success = null
+
+    $scope.removeLogo = ->
+      return unless confirm(t("admin.enterprises.remove_logo.immediate_removal_warning"))
+
+      Enterprises.removeLogo($scope.Enterprise).then (data) ->
+        $scope.Enterprise = angular.copy(data)
+        $scope.$emit("enterprise:updated", $scope.Enterprise)
+
+        StatusMessage.display("success", t("admin.enterprises.remove_logo.removed_successfully"))
+      , (response) ->
+        if response.data.error?
+          StatusMessage.display("failure", response.data.error)
+
+    $scope.removePromoImage = ->
+      return unless confirm(t("admin.enterprises.remove_promo_image.immediate_removal_warning"))
+
+      Enterprises.removePromoImage($scope.Enterprise).then (data) ->
+        $scope.Enterprise = angular.copy(data)
+        $scope.$emit("enterprise:updated", $scope.Enterprise)
+
+        StatusMessage.display("success", t("admin.enterprises.remove_promo_image.removed_successfully"))
+      , (response) ->
+        if response.data.error?
+          StatusMessage.display("failure", response.data.error)

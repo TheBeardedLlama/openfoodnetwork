@@ -35,11 +35,11 @@ feature %q{
       fill_in 'product_on_hand', with: 5
       select 'Test Tax Category', from: 'product_tax_category_id'
       select 'Test Shipping Category', from: 'product_shipping_category_id'
-      page.find("input[name='product\[description\]']", visible: false).set('A description...')
+      page.find("div[id^='taTextElement']").native.send_keys('A description...')
 
       click_button 'Create'
 
-      expect(current_path).to eq spree.bulk_edit_admin_products_path
+      expect(current_path).to eq spree.admin_products_path
       flash_message.should == 'Product "A new product !!!" has been successfully created!'
       product = Spree::Product.find_by_name('A new product !!!')
       product.supplier.should == @supplier
@@ -53,16 +53,16 @@ feature %q{
       product.on_hand.should == 5
       product.tax_category_id.should == tax_category.id
       product.shipping_category.should == shipping_category
-      product.description.should == "A description..."
+      product.description.should == "<p>A description...</p>"
       product.group_buy.should be_falsey
       product.master.option_values.map(&:name).should == ['5kg']
       product.master.options_text.should == "5kg"
     end
 
     scenario "creating an on-demand product", js: true do
-      login_to_admin_section
+      quick_login_as_admin
+      visit spree.admin_products_path
 
-      click_link 'Products'
       click_link 'New Product'
 
       fill_in 'product_name', with: 'Hot Cakes'
@@ -75,12 +75,11 @@ feature %q{
       check 'product_on_demand'
       select 'Test Tax Category', from: 'product_tax_category_id'
       select 'Test Shipping Category', from: 'product_shipping_category_id'
-      #fill_in 'product_description', with: "In demand, and on_demand! The hottest cakes in town."
-      page.first("input[name='product\[description\]']", visible: false).set('In demand, and on_demand! The hottest cakes in town.')
+      page.find("div[id^='taTextElement']").native.send_keys('In demand, and on_demand! The hottest cakes in town.')
 
       click_button 'Create'
 
-      expect(current_path).to eq spree.bulk_edit_admin_products_path
+      expect(current_path).to eq spree.admin_products_path
       product = Spree::Product.find_by_name('Hot Cakes')
       product.variants.count.should == 1
       variant = product.variants.first
@@ -100,13 +99,13 @@ feature %q{
       create(:enterprise_relationship, parent: @supplier_permitted, child: @supplier2,
              permissions_list: [:manage_products])
 
-      login_to_admin_as @new_user
+      quick_login_as @new_user
     end
 
     context "products do not require a tax category" do
       scenario "creating a new product", js: true do
         with_products_require_tax_category(false) do
-          click_link 'Products'
+          visit spree.admin_products_path
           click_link 'New Product'
 
           fill_in 'product_name', :with => 'A new product !!!'
@@ -184,19 +183,17 @@ feature %q{
       product.distributors.should == [@distributors[0]]
     end
 
-    scenario "editing product SEO" do
+    scenario "editing product Search" do
       product = product = create(:simple_product, supplier: @supplier2)
       visit spree.edit_admin_product_path product
-      within('#sidebar') { click_link 'SEO' }
-      fill_in "product_meta_keywords", :with => 'Meta Keywords'
-      fill_in 'Meta Description', :with => 'Meta Description'
+      within('#sidebar') { click_link 'Search' }
+      fill_in 'Product Search Keywords', :with => 'Product Search Keywords'
       fill_in 'Notes', :with => 'Just testing Notes'
       click_button 'Update'
-      flash_message.should == "Product \"#{product.name}\" has been successfully updated!"
+      expect(flash_message).to eq("Product \"#{product.name}\" has been successfully updated!")
       product.reload
-      product.notes.should == 'Just testing Notes'
-      product.meta_keywords.should == 'Meta Keywords'
-      product.meta_description.should == 'Meta Description'
+      expect(product.notes).to eq('Just testing Notes')
+      expect(product.meta_keywords).to eq('Product Search Keywords')
     end
 
     scenario "deleting product properties", js: true do
@@ -227,12 +224,14 @@ feature %q{
 
       visit spree.admin_product_images_path(product)
       page.should have_selector "table[data-hook='images_table'] td img"
-      product.reload.images.count.should == 1
+      expect(product.reload.images.count).to eq 1
 
-      page.find('a.delete-resource').click
-      wait_until { product.reload.images.count == 0 }
+      accept_alert do
+        page.find('a.delete-resource').click
+      end
 
-      page.should_not have_selector "table[data-hook='images_table'] td img"
+      expect(page).to_not have_selector "table[data-hook='images_table'] td img"
+      expect(product.reload.images.count).to eq 0
     end
   end
 end

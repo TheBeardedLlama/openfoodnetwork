@@ -8,77 +8,10 @@ describe Enterprise do
       let!(:user) { create_enterprise_user( enterprise_limit: 2 ) }
       let!(:enterprise) { create(:enterprise, owner: user) }
 
-      context "when the email address has not already been confirmed" do
-        it "sends a confirmation email" do
-          expect do
-            create(:enterprise, owner: user, email: "unknown@email.com", confirmed_at: nil )
-          end.to enqueue_job Delayed::PerformableMethod
-          Delayed::Job.last.payload_object.method_name.should == :send_on_create_confirmation_instructions_without_delay
-        end
-
-        it "does not send a welcome email" do
-          expect(EnterpriseMailer).to_not receive(:welcome)
-          create(:enterprise, owner: user, email: "unknown@email.com", confirmed_at: nil )
-        end
-      end
-
-      context "when the email address has already been confirmed" do
-        it "does not send a confirmation email" do
-          expect(EnterpriseMailer).to_not receive(:confirmation_instructions)
-          create(:enterprise, owner: user, email: enterprise.email, confirmed_at: nil)
-        end
-
-        it "sends a welcome email" do
-          expect do
-            create(:enterprise, owner: user, email: enterprise.email, confirmed_at: nil)
-          end.to enqueue_job WelcomeEnterpriseJob
-        end
-      end
-    end
-
-    describe "on update of email" do
-      let!(:user) { create_enterprise_user( enterprise_limit: 2 ) }
-      let!(:enterprise) { create(:enterprise, owner: user) }
-
-      it "when the email address has not already been confirmed" do
+      it "sends a welcome email" do
         expect do
-          enterprise.update_attributes(email: "unknown@email.com")
-        end.to enqueue_job Delayed::PerformableMethod
-        Delayed::Job.last.payload_object.method_name.should == :send_confirmation_instructions_without_delay
-      end
-
-      it "when the email address has already been confirmed" do
-        create(:enterprise, owner: user, email: "second.known.email@email.com") # Another enterpise with same owner but different email
-        expect(EnterpriseMailer).to_not receive(:confirmation_instructions)
-        enterprise.update_attributes!(email: "second.known.email@email.com")
-      end
-    end
-
-    describe "on email confirmation" do
-      let!(:user) { create_enterprise_user( enterprise_limit: 2 ) }
-      let!(:unconfirmed_enterprise) { create(:enterprise, owner: user, confirmed_at: nil) }
-
-      context "when we are confirming an email address for the first time for the enterprise" do
-        it "sends a welcome email" do
-          # unconfirmed_email is blank if we are not reconfirming an email
-          unconfirmed_enterprise.unconfirmed_email = nil
-          unconfirmed_enterprise.save!
-
-          expect do
-            unconfirmed_enterprise.confirm!
-          end.to enqueue_job WelcomeEnterpriseJob, enterprise_id: unconfirmed_enterprise.id
-        end
-      end
-
-      context "when we are reconfirming the email address for the enterprise" do
-        it "does not send a welcome email" do
-          # unconfirmed_email is present if we are reconfirming an email
-          unconfirmed_enterprise.unconfirmed_email = "unconfirmed@email.com"
-          unconfirmed_enterprise.save!
-
-          expect(EnterpriseMailer).to_not receive(:welcome)
-          unconfirmed_enterprise.confirm!
-        end
+          create(:enterprise, owner: user)
+        end.to enqueue_job WelcomeEnterpriseJob
       end
     end
   end
@@ -166,19 +99,20 @@ describe Enterprise do
       end
 
       it "validates ownership limit" do
-        expect(u1.enterprise_limit).to be 1
+        expect(u1.enterprise_limit).to be 5
         expect(u1.owned_enterprises(:reload)).to eq [e]
-        e2 = create(:enterprise, owner: u2 )
-        expect{
+        4.times { create(:enterprise, owner: u1) }
+        e2 = create(:enterprise, owner: u2)
+        expect {
           e2.owner = u1
           e2.save!
-        }.to raise_error ActiveRecord::RecordInvalid, "Validation failed: #{u1.email} is not permitted to own any more enterprises (limit is 1)."
+        }.to raise_error ActiveRecord::RecordInvalid, "Validation failed: #{u1.email} is not permitted to own any more enterprises (limit is 5)."
       end
     end
   end
 
   describe "validations" do
-    subject { FactoryGirl.create(:distributor_enterprise) }
+    subject { FactoryBot.create(:distributor_enterprise) }
     it { should validate_presence_of(:name) }
     it { should validate_uniqueness_of(:permalink) }
     it { should ensure_length_of(:description).is_at_most(255) }
@@ -195,28 +129,23 @@ describe Enterprise do
 
       it "prevents duplicate names for new records" do
         e = Enterprise.new name: enterprise.name
-        e.should_not be_valid
-        e.errors[:name].first.should ==
-          "has already been taken. If this is your enterprise and you would like to claim ownership, please contact the current manager of this profile at owner@example.com."
+        expect(e).to_not be_valid
+        expect(e.errors[:name].first).to include I18n.t('enterprise_name_error', email: owner.email)
       end
 
       it "prevents duplicate names for existing records" do
         e = create(:enterprise, name: 'foo')
         e.name = enterprise.name
-        e.should_not be_valid
-        e.errors[:name].first.should ==
-          "has already been taken. If this is your enterprise and you would like to claim ownership, please contact the current manager of this profile at owner@example.com."
+        expect(e).to_not be_valid
+        expect(e.errors[:name].first).to include I18n.t('enterprise_name_error', email: owner.email)
       end
 
       it "does not prohibit the saving of an enterprise with no name clash" do
         enterprise.should be_valid
       end
 
-      it "takes the owner's email address as default email" do
-        enterprise.email = nil
-        enterprise.should be_valid
-        enterprise.email.should be_present
-        enterprise.email.should eq owner.email
+      it "sets the enterprise contact to the owner by default" do
+        enterprise.contact.should eq enterprise.owner
       end
     end
 
@@ -257,7 +186,7 @@ describe Enterprise do
   end
 
   describe "delegations" do
-    #subject { FactoryGirl.create(:distributor_enterprise, :address => FactoryGirl.create(:address)) }
+    #subject { FactoryBot.create(:distributor_enterprise, :address => FactoryBot.create(:address)) }
 
     it { should delegate(:latitude).to(:address) }
     it { should delegate(:longitude).to(:address) }
@@ -284,38 +213,15 @@ describe Enterprise do
       end
     end
 
-    describe "confirmed" do
-      it "find enterprises with a confirmed date" do
-        s1 = create(:supplier_enterprise)
-        d1 = create(:distributor_enterprise)
-        s2 = create(:supplier_enterprise, confirmed_at: nil)
-        d2 = create(:distributor_enterprise, confirmed_at: nil)
-        expect(Enterprise.confirmed).to include s1, d1
-        expect(Enterprise.confirmed).to_not include s2, d2
-      end
-    end
-
-    describe "unconfirmed" do
-      it "find enterprises without a confirmed date" do
-        s1 = create(:supplier_enterprise)
-        d1 = create(:distributor_enterprise)
-        s2 = create(:supplier_enterprise, confirmed_at: nil)
-        d2 = create(:distributor_enterprise, confirmed_at: nil)
-        expect(Enterprise.unconfirmed).to_not include s1, d1
-        expect(Enterprise.unconfirmed).to include s2, d2
-      end
-    end
-
     describe "activated" do
-      let!(:inactive_enterprise1) { create(:enterprise, sells: "unspecified", confirmed_at: Time.zone.now) ;}
-      let!(:inactive_enterprise2) { create(:enterprise, sells: "none", confirmed_at: nil) }
-      let!(:active_enterprise) { create(:enterprise, sells: "none", confirmed_at: Time.zone.now) }
+      let!(:unconfirmed_user) { create(:user, confirmed_at: nil, enterprise_limit: 2) }
+      let!(:inactive_enterprise) { create(:enterprise, sells: "unspecified") }
+      let!(:active_enterprise) { create(:enterprise, sells: "none") }
 
-      it "finds enterprises that have a sells property other than 'unspecified' and that are confirmed" do
+      it "finds enterprises that have a sells property other than 'unspecified'" do
         activated_enterprises = Enterprise.activated
         expect(activated_enterprises).to include active_enterprise
-        expect(activated_enterprises).to_not include inactive_enterprise1
-        expect(activated_enterprises).to_not include inactive_enterprise2
+        expect(activated_enterprises).to_not include inactive_enterprise
       end
     end
 
@@ -410,101 +316,8 @@ describe Enterprise do
         s = create(:supplier_enterprise)
         d = create(:distributor_enterprise)
         p = create(:product)
-        create(:simple_order_cycle, :orders_open_at => 10.days.from_now, suppliers: [s], distributors: [d], variants: [p.master])
+        create(:simple_order_cycle, :orders_open_at => 10.days.from_now, orders_close_at: 17.days.from_now, suppliers: [s], distributors: [d], variants: [p.master])
         Enterprise.distributors_with_active_order_cycles.should_not include d
-      end
-    end
-
-    describe "active_distributors" do
-      it "finds active distributors by product distributions" do
-        d = create(:distributor_enterprise)
-        create(:product, :distributors => [d])
-        Enterprise.active_distributors.should == [d]
-      end
-
-      it "doesn't show distributors of deleted products" do
-        d = create(:distributor_enterprise)
-        create(:product, :distributors => [d], :deleted_at => Time.zone.now)
-        Enterprise.active_distributors.should be_empty
-      end
-
-      it "doesn't show distributors of unavailable products" do
-        d = create(:distributor_enterprise)
-        create(:product, :distributors => [d], :available_on => 1.week.from_now)
-        Enterprise.active_distributors.should be_empty
-      end
-
-      it "doesn't show distributors of out of stock products" do
-        d = create(:distributor_enterprise)
-        create(:product, :distributors => [d], :on_hand => 0)
-        Enterprise.active_distributors.should be_empty
-      end
-
-      it "finds active distributors by order cycles" do
-        s = create(:supplier_enterprise)
-        d = create(:distributor_enterprise)
-        p = create(:product)
-        create(:simple_order_cycle, suppliers: [s], distributors: [d], variants: [p.master])
-        Enterprise.active_distributors.should == [d]
-      end
-
-      it "doesn't show distributors from inactive order cycles" do
-        s = create(:supplier_enterprise)
-        d = create(:distributor_enterprise)
-        p = create(:product)
-        create(:simple_order_cycle, suppliers: [s], distributors: [d], variants: [p.master], orders_open_at: 1.week.from_now, orders_close_at: 2.weeks.from_now)
-        Enterprise.active_distributors.should be_empty
-      end
-    end
-
-    describe "with_distributed_active_products_on_hand" do
-      it "returns distributors with products in stock" do
-        d1 = create(:distributor_enterprise)
-        d2 = create(:distributor_enterprise)
-        d3 = create(:distributor_enterprise)
-        d4 = create(:distributor_enterprise)
-        create(:product, :distributors => [d1, d2], :on_hand => 5)
-        create(:product, :distributors => [d1], :on_hand => 5)
-        create(:product, :distributors => [d3], :on_hand => 0)
-
-        Enterprise.with_distributed_active_products_on_hand.should match_array [d1, d2]
-      end
-
-      it "returns distributors with available products in stock" do
-        d1 = create(:distributor_enterprise) # two products on hand
-        d2 = create(:distributor_enterprise) # one product on hand
-        d3 = create(:distributor_enterprise) # product on hand but not yet available
-        d4 = create(:distributor_enterprise) # no products on hand
-        d5 = create(:distributor_enterprise) # deleted product
-        d6 = create(:distributor_enterprise) # no products
-        create(:product, :distributors => [d1, d2], :on_hand => 5)
-        create(:product, :distributors => [d1], :on_hand => 5)
-        create(:product, :distributors => [d3], :on_hand => 5, :available_on => 1.week.from_now)
-        create(:product, :distributors => [d4], :on_hand => 0)
-        create(:product, :distributors => [d5]).delete
-
-        Enterprise.with_distributed_active_products_on_hand.should match_array [d1, d2]
-        Enterprise.with_distributed_active_products_on_hand.distinct_count.should == 2
-      end
-    end
-
-    describe "with_supplied_active_products_on_hand" do
-      it "returns suppliers with available products in stock" do
-        d1 = create(:supplier_enterprise) # two products on hand
-        d2 = create(:supplier_enterprise) # one product on hand
-        d3 = create(:supplier_enterprise) # product on hand but not yet available
-        d4 = create(:supplier_enterprise) # no products on hand
-        d5 = create(:supplier_enterprise) # deleted product
-        d6 = create(:supplier_enterprise) # no products
-        create(:product, :supplier => d1, :on_hand => 5)
-        create(:product, :supplier => d1, :on_hand => 5)
-        create(:product, :supplier => d2, :on_hand => 5)
-        create(:product, :supplier => d3, :on_hand => 5, :available_on => 1.week.from_now)
-        create(:product, :supplier => d4, :on_hand => 0)
-        create(:product, :supplier => d5).delete
-
-        Enterprise.with_supplied_active_products_on_hand.should match_array [d1, d2]
-        Enterprise.with_supplied_active_products_on_hand.distinct_count.should == 2
       end
     end
 
@@ -673,36 +486,6 @@ describe Enterprise do
           er.permissions.map(&:name).should match_array opts[:with].map(&:to_s)
         end
       end
-    end
-  end
-
-  describe "has_supplied_products_on_hand?" do
-    before :each do
-      @supplier = create(:supplier_enterprise)
-    end
-
-    it "returns false when no products" do
-      @supplier.should_not have_supplied_products_on_hand
-    end
-
-    it "returns false when the product is out of stock" do
-      create(:product, :supplier => @supplier, :on_hand => 0)
-      @supplier.should_not have_supplied_products_on_hand
-    end
-
-    it "returns true when the product is in stock" do
-      create(:product, :supplier => @supplier, :on_hand => 1)
-      @supplier.should have_supplied_products_on_hand
-    end
-  end
-
-  describe "supplied_and_active_products_on_hand" do
-    it "find only active products which are in stock" do
-      supplier = create(:supplier_enterprise)
-      inactive_product = create(:product, supplier:  supplier, on_hand: 1, available_on: Date.tomorrow)
-      out_of_stock_product = create(:product, supplier:  supplier, on_hand: 0, available_on: Date.yesterday)
-      p1 = create(:product, supplier: supplier, on_hand: 1, available_on: Date.yesterday)
-      supplier.supplied_and_active_products_on_hand.should == [p1]
     end
   end
 

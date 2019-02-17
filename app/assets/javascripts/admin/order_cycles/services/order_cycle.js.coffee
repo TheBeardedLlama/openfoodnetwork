@@ -151,23 +151,28 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
       return unless @confirmNoDistributors()
       oc = new OrderCycleResource({order_cycle: this.dataForSubmit()})
       oc.$create (data) ->
-        if data['success']
-          $window.location = destination
+        $window.location = destination
+      , (response) ->
+        if response.data.errors?
+          StatusMessage.display('failure', response.data.errors[0])
         else
-          console.log('Failed to create order cycle')
+          StatusMessage.display('failure', t('js.order_cycles.create_failure'))
 
     update: (destination, form) ->
       return unless @confirmNoDistributors()
       oc = new OrderCycleResource({order_cycle: this.dataForSubmit()})
       oc.$update {order_cycle_id: this.order_cycle.id, reloading: (if destination? then 1 else 0)}, (data) =>
-        if data['success']
-          form.$setPristine() if form
-          if destination?
-            $window.location = destination
-          else
-            StatusMessage.display 'success', t('js.order_cycles.update_success')
+        form.$setPristine() if form
+        if destination?
+          $window.location = destination
         else
-          console.log('Failed to update order cycle')
+          StatusMessage.display 'success', t('js.order_cycles.update_success')
+      , (response) ->
+        if response.data.errors?
+          StatusMessage.display('failure', response.data.errors[0])
+        else
+          StatusMessage.display('failure', t('js.order_cycles.update_failure'))
+
 
     confirmNoDistributors: ->
       if @order_cycle.outgoing_exchanges.length == 0
@@ -204,6 +209,7 @@ angular.module('admin.orderCycles').factory 'OrderCycle', ($resource, $window, S
       delete order_cycle.editable_variants_for_incoming_exchanges
       delete order_cycle.editable_variants_for_outgoing_exchanges
       delete order_cycle.visible_variants_for_outgoing_exchanges
+      delete order_cycle.subscriptions_count
       order_cycle
 
     removeInactiveExchanges: (order_cycle) ->

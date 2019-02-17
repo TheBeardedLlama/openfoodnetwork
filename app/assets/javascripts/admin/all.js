@@ -19,6 +19,7 @@
 //= require admin/spree_paypal_express
 //= require ../shared/ng-infinite-scroll.min.js
 //= require ../shared/ng-tags-input.min.js
+//= require moment
 //= require angular-rails-templates
 //= require_tree ../templates/admin
 //= require ./admin_ofn
@@ -35,10 +36,13 @@
 //= require ./orders/orders
 //= require ./order_cycles/order_cycles
 //= require ./payment_methods/payment_methods
+//= require ./payments/payments
+//= require ./product_import/product_import
 //= require ./products/products
 //= require ./resources/resources
 //= require ./shipping_methods/shipping_methods
 //= require ./side_menu/side_menu
+//= require ./subscriptions/subscriptions
 //= require ./tag_rules/tag_rules
 //= require ./taxons/taxons
 //= require ./utils/utils
@@ -49,14 +53,17 @@
 //= require textAngular.min.js
 //= require i18n/translations
 //= require darkswarm/i18n.translate.js
-//
 //= require moment
+//= require moment/de.js
 //= require moment/en-gb.js
 //= require moment/es.js
 //= require moment/fr.js
 //= require moment/it.js
 //= require moment/nb.js
 //= require moment/pt-br.js
+//= require moment/pt.js
 //= require moment/sv.js
+//= require ../shared/mm-foundation-tpls-0.9.0-20180826174721.min.js
+//= require angularjs-file-upload
 
 //= require_tree .

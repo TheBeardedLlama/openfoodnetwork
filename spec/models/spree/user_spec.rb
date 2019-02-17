@@ -1,4 +1,8 @@
+require 'spec_helper'
+
 describe Spree.user_class do
+  include OpenFoodNetwork::EmailHelper
+
   describe "associations" do
     it { should have_many(:owned_enterprises) }
 
@@ -69,9 +73,39 @@ describe Spree.user_class do
   end
 
   context "#create" do
-    it "should send a signup email" do
+    it "should send a confirmation email" do
+      setup_email
+
       expect do
-        create(:user)
+        create(:user, email: 'new_user@example.com', confirmation_sent_at: nil, confirmed_at: nil)
+      end.to send_confirmation_instructions
+
+      sent_mail = ActionMailer::Base.deliveries.last
+      expect(sent_mail.to).to eq ['new_user@example.com']
+    end
+
+    context "with the the same email as existing customers" do
+      let(:email) { Faker::Internet.email }
+      let(:enterprise1) { create(:enterprise) }
+      let(:enterprise2) { create(:enterprise) }
+      let!(:customer1) { create(:customer, user: nil, email: email, enterprise: enterprise1) }
+      let!(:customer2) { create(:customer, user: nil, email: email, enterprise: enterprise2) }
+      let!(:user) { create(:user, email: email) }
+
+      it "should associate these customers with the created user" do
+        expect(user.customers.reload).to include customer1, customer2
+        expect(user.customer_of(enterprise1)).to be_truthy
+        expect(user.customer_of(enterprise2)).to be_truthy
+      end
+    end
+  end
+
+  context "confirming email" do
+    it "should send a welcome email" do
+      setup_email
+
+      expect do
+        create(:user, confirmed_at: nil).confirm!
       end.to enqueue_job ConfirmSignupJob
     end
   end
@@ -97,6 +131,34 @@ describe Spree.user_class do
 
       it "returns all users" do
         expect(admin.known_users).to include u1, u2, u3
+      end
+    end
+  end
+
+  describe "default_card" do
+    let(:user) { create(:user) }
+
+    context "when the user has no credit cards" do
+      it "returns nil" do
+        expect(user.default_card).to be nil
+      end
+    end
+
+    context "when the user has one credit card" do
+      let!(:card) { create(:credit_card, user: user) }
+
+      it "should be assigned as the default and be returned" do
+        expect(card.reload.is_default).to be true
+        expect(user.default_card.id).to be card.id
+      end
+    end
+
+    context "when the user has more than one card" do
+      let!(:non_default_card) { create(:credit_card, user: user) }
+      let!(:default_card) { create(:credit_card, user: user, is_default: true) }
+
+      it "returns the card which is specified as the default" do
+        expect(user.default_card.id).to be default_card.id
       end
     end
   end

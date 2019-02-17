@@ -2,16 +2,19 @@ source 'https://rubygems.org'
 ruby "2.1.5"
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}.git" }
 
-gem 'rails', '3.2.21'
+gem 'rails', '~> 3.2.22'
 gem 'rails-i18n', '~> 3.0.0'
 gem 'i18n', '~> 0.6.11'
-gem 'i18n-js', '~> 3.0.0'
+gem 'i18n-js', '~> 3.2.1'
 
 # Patched version. See http://rubysec.com/advisories/CVE-2015-5312/.
 gem 'nokogiri', '>= 1.6.7.1'
 
+gem "order_management", path: "./engines/order_management"
+gem 'web', path: './engines/web'
+
 gem 'pg'
-gem 'spree', github: 'openfoodfoundation/spree', branch: 'step-6a', ref: '5a76d45'
+gem 'spree', github: 'openfoodfoundation/spree', branch: 'step-6a', ref: '41906362d931695e0616194341a68d2c4c85aaaf'
 gem 'spree_i18n', github: 'spree/spree_i18n', branch: '1-3-stable'
 gem 'spree_auth_devise', github: 'openfoodfoundation/spree_auth_devise', branch: 'spree-upgrade-intermediate'
 
@@ -20,11 +23,13 @@ gem 'spree_auth_devise', github: 'openfoodfoundation/spree_auth_devise', branch:
 # - Change type of password from string to password to hide it in the form
 gem 'spree_paypal_express', github: "openfoodfoundation/better_spree_paypal_express", branch: "spree-upgrade-intermediate"
 #gem 'spree_paypal_express', github: "spree-contrib/better_spree_paypal_express", branch: "1-3-stable"
-gem 'stripe', '~> 3.3.1'
-gem 'activemerchant', '~> 1.71.0'
+gem 'stripe', '~> 4.5.0'
+# We need at least this version to have Digicert's root certificate
+# which is needed for Pin Payments (and possibly others).
+gem 'activemerchant', '~> 1.78'
 
-gem 'oauth2', '~> 1.2.0' # Used for Stripe Connect
-gem 'jwt', '~> 1.5'
+gem 'oauth2', '~> 1.4.1' # Used for Stripe Connect
+gem 'jwt', '~> 2.1'
 
 gem 'delayed_job_active_record'
 gem 'daemons'
@@ -36,7 +41,6 @@ gem 'simple_form', github: 'RohanM/simple_form'
 gem 'unicorn'
 gem 'angularjs-rails', '1.5.5'
 gem 'bugsnag'
-gem 'newrelic_rpm'
 gem 'haml'
 gem 'sass', "~> 3.3"
 gem 'sass-rails', '~> 3.2.3', groups: [:default, :assets]
@@ -45,9 +49,11 @@ gem 'aws-sdk'
 gem 'db2fog'
 gem 'andand'
 gem 'truncate_html'
-gem 'representative_view'
 gem 'rabl'
-gem "active_model_serializers"
+
+# AMS is pinned to 0.8.4 because 0.9.x is a complete re-write, as is 0.10.x
+# Once Rails is updated to 5.x we should bump directly to 0.10.x
+gem "active_model_serializers", "0.8.4"
 gem 'oj'
 gem 'deface', github: 'spree/deface', ref: '1110a13'
 gem 'paperclip'
@@ -56,21 +62,25 @@ gem 'geocoder'
 gem 'gmaps4rails'
 gem 'spinjs-rails'
 gem 'rack-ssl', require: 'rack/ssl'
+gem 'rack-rewrite'
 gem 'custom_error_message', github: 'jeremydurham/custom-err-msg'
-gem 'angularjs-file-upload-rails', '~> 1.1.6'
-gem 'roadie-rails', '~> 1.0.3'
+gem 'angularjs-file-upload-rails', '~> 2.4.1'
+gem 'roadie-rails', '~> 1.1.1'
 gem 'figaro'
 gem 'blockenspiel'
 gem 'acts-as-taggable-on', '~> 3.4'
-gem 'paper_trail', '~> 3.0.8'
+gem 'paper_trail', '~> 5.2.3'
 gem 'diffy'
+gem 'skylight', '< 2.0'
 
+gem 'combine_pdf'
 gem 'wicked_pdf'
 gem 'wkhtmltopdf-binary'
 
 gem 'foreigner'
 gem 'immigrant'
 gem 'roo', '~> 2.7.0'
+gem 'roo-xls', '~> 1.1.0'
 
 gem 'whenever', require: false
 
@@ -80,15 +90,14 @@ group :assets do
   gem 'compass-rails'
   gem 'coffee-rails', '~> 3.2.1'
 
-  # See https://github.com/sstephenson/execjs#readme for more supported runtimes
-  gem 'therubyracer'
+  gem 'therubyracer', '=0.12.0'
 
   gem 'uglifier', '>= 1.0.3'
 
   gem 'turbo-sprockets-rails3'
   gem 'foundation-icons-sass-rails'
   gem 'momentjs-rails'
-  gem 'angular-rails-templates', '~> 0.2.0'
+  gem 'angular-rails-templates', '~> 0.3.0'
 end
 
 gem "foundation-rails"
@@ -96,23 +105,22 @@ gem 'foundation_rails_helper', github: 'willrjmarshall/foundation_rails_helper',
 
 gem 'jquery-rails'
 gem 'jquery-migrate-rails'
-gem 'css_splitter'
 
-gem 'ofn-qz', github: 'openfoodfoundation/ofn-qz'
+gem 'ofn-qz', github: 'openfoodfoundation/ofn-qz', ref: '60da2ae4c44cbb4c8d602f59fb5fff8d0f21db3c'
 
 group :test, :development do
   # Pretty printed test output
-  gem 'turn', '~> 0.8.3', require: false
-  gem 'fuubar', '~> 2.2.0'
+  gem 'fuubar', '~> 2.3.2'
   gem 'rspec-rails', ">= 3.5.2"
   gem 'shoulda-matchers'
-  gem 'factory_girl_rails', require: false
+  gem "factory_bot_rails", require: false
   gem 'capybara', '>= 2.15.4'
   gem 'database_cleaner', '0.7.1', require: false
   gem 'awesome_print'
-  gem 'letter_opener'
+  gem 'letter_opener', '>= 1.4.1'
   gem 'timecop'
-  gem 'poltergeist', '>= 1.16.0'
+  gem 'selenium-webdriver'
+  gem 'chromedriver-helper'
   gem 'rspec-retry'
   gem 'json_spec', '~> 1.1.4'
   gem 'unicorn-rails'
@@ -122,6 +130,7 @@ end
 
 group :test do
   gem 'webmock'
+  gem 'simplecov', require: false
   # See spec/spec_helper.rb for instructions
   #gem 'perftools.rb'
 end
@@ -133,14 +142,16 @@ group :development do
   gem 'guard'
   gem 'listen', '3.0.8' # 3.1.0 requires ruby 2.2
   gem 'guard-livereload'
-  gem 'rack-livereload'
   gem 'guard-rails'
   gem 'guard-rspec', '~> 4.7.3'
-  gem 'parallel_tests'
   gem 'rubocop', '>= 0.49.1'
+  gem 'spring', '1.7.2'
+  gem 'spring-commands-rspec'
 
   # 1.0.9 fixed openssl issues on macOS https://github.com/eventmachine/eventmachine/issues/602
   # While we don't require this gem directly, no dependents forced the upgrade to a version
   # greater than 1.0.9, so we just required the latest available version here.
   gem 'eventmachine', '>= 1.2.3'
+
+  gem 'rack-mini-profiler', '< 1.0.0'
 end

@@ -1,4 +1,5 @@
 require "spec_helper"
+include ActionView::Helpers::NumberHelper
 
 feature %q{
     As an administrator
@@ -6,6 +7,7 @@ feature %q{
 }, js: true do
   include AuthenticationWorkflow
   include WebHelper
+  include CheckoutHelper
 
   background do
     @user = create(:user)
@@ -30,47 +32,60 @@ feature %q{
     click_button 'Next'
   end
 
+  scenario "order cycles appear in descending order by close date on orders page" do
+    create(:simple_order_cycle, name: 'Two', orders_close_at: 2.weeks.from_now)
+    create(:simple_order_cycle, name: 'Four', orders_close_at: 4.weeks.from_now)
+    create(:simple_order_cycle, name: 'Three', orders_close_at: 3.weeks.from_now)
+
+    quick_login_as_admin
+    visit 'admin/orders'
+
+    open_select2('#s2id_q_order_cycle_id_in')
+
+    expect(find('#q_order_cycle_id_in', visible: :all)[:innerHTML]).to have_content(/.*Four.*Three.*Two.*One/m)
+  end
+
   scenario "creating an order with distributor and order cycle" do
     distributor_disabled = create(:distributor_enterprise)
     create(:simple_order_cycle, name: 'Two')
 
-    login_to_admin_section
+    quick_login_as_admin
 
     visit '/admin/orders'
     click_link 'New Order'
 
     # Distributors without an order cycle should be shown as disabled
     open_select2('#s2id_order_distributor_id')
-    page.should have_selector "ul.select2-results li.select2-result.select2-disabled", text: distributor_disabled.name
+    expect(page).to have_selector "ul.select2-results li.select2-result.select2-disabled", text: distributor_disabled.name
     close_select2('#s2id_order_distributor_id')
 
     # Order cycle selector should be disabled
-    page.should have_selector "#s2id_order_order_cycle_id.select2-container-disabled"
+    expect(page).to have_selector "#s2id_order_order_cycle_id.select2-container-disabled"
 
     # When we select a distributor, it should limit order cycle selection to those for that distributor
     select2_select @distributor.name, from: 'order_distributor_id'
-    page.should have_select2 'order_order_cycle_id', options: ['One (open)']
+    expect(page).to have_select2 'order_order_cycle_id', options: ['One (open)']
     select2_select @order_cycle.name, from: 'order_order_cycle_id'
     click_button 'Next'
 
     # it suppresses validation errors when setting distribution
-    page.should_not have_selector '#errorExplanation'
-    page.should have_content 'ADD PRODUCT'
+    expect(page).not_to have_selector '#errorExplanation'
+    expect(page).to have_content 'ADD PRODUCT'
     targetted_select2_search @product.name, from: '#add_variant_id', dropdown_css: '.select2-drop'
     click_link 'Add'
     page.has_selector? "table.index tbody[data-hook='admin_order_form_line_items'] tr"  # Wait for JS
-    page.should have_selector 'td', text: @product.name
+    expect(page).to have_selector 'td', text: @product.name
 
     click_button 'Update'
 
-    page.should have_selector 'h1', text: 'Customer Details'
+    expect(page).to have_selector 'h1', text: 'Customer Details'
     o = Spree::Order.last
-    o.distributor.should == @distributor
-    o.order_cycle.should == @order_cycle
+    expect(o.distributor).to eq(@distributor)
+    expect(o.order_cycle).to eq(@order_cycle)
   end
 
   scenario "can add a product to an existing order", retry: 3 do
-    login_to_admin_section
+    quick_login_as_admin
     visit '/admin/orders'
 
     click_edit
@@ -79,8 +94,8 @@ feature %q{
 
     click_link 'Add'
 
-    page.should have_selector 'td', text: @product.name
-    @order.line_items(true).map(&:product).should include @product
+    expect(page).to have_selector 'td', text: @product.name
+    expect(@order.line_items(true).map(&:product)).to include @product
   end
 
   scenario "displays error when incorrect distribution for products is chosen" do
@@ -91,10 +106,10 @@ feature %q{
 
     @order.state = 'cart'; @order.completed_at = nil; @order.save
 
-    login_to_admin_section
+    quick_login_as_admin
     visit '/admin/orders'
     uncheck 'Only show complete orders'
-    click_button 'Filter Results'
+    page.find('a.icon-search').click
 
     click_edit
 
@@ -102,32 +117,32 @@ feature %q{
     select2_select oc.name, from: 'order_order_cycle_id'
 
     click_button 'Update And Recalculate Fees'
-    page.should have_content "Distributor or order cycle cannot supply the products in your cart"
+    expect(page).to have_content "Distributor or order cycle cannot supply the products in your cart"
   end
 
 
   scenario "can't add products to an order outside the order's hub and order cycle" do
     product = create(:simple_product)
 
-    login_to_admin_section
+    quick_login_as_admin
     visit '/admin/orders'
     page.find('td.actions a.icon-edit').click
 
-    page.should_not have_select2_option product.name, from: ".variant_autocomplete", dropdown_css: ".select2-search"
+    expect(page).not_to have_select2 "add_variant_id", with_options: [product.name]
   end
 
   scenario "can't change distributor or order cycle once order has been finalized" do
     @order.update_attributes order_cycle_id: nil
 
-    login_to_admin_section
+    quick_login_as_admin
     visit '/admin/orders'
     page.find('td.actions a.icon-edit').click
 
-    page.should_not have_select2 'order_distributor_id'
-    page.should_not have_select2 'order_order_cycle_id'
+    expect(page).not_to have_select2 'order_distributor_id'
+    expect(page).not_to have_select2 'order_order_cycle_id'
 
-    page.should have_selector 'p', text: "Distributor: #{@order.distributor.name}"
-    page.should have_selector 'p', text: "Order cycle: None"
+    expect(page).to have_selector 'p', text: "Distributor: #{@order.distributor.name}"
+    expect(page).to have_selector 'p', text: "Order cycle: None"
   end
 
   scenario "filling customer details" do
@@ -158,7 +173,7 @@ feature %q{
   end
 
   scenario "capture payment from the orders index page" do
-    login_to_admin_section
+    quick_login_as_admin
 
     visit spree.admin_orders_path
     expect(page).to have_current_path spree.admin_orders_path
@@ -174,7 +189,6 @@ feature %q{
     # we should still be on the same page
     expect(page).to have_current_path spree.admin_orders_path
   end
-
 
   context "as an enterprise manager" do
     let(:coordinator1) { create(:distributor_enterprise) }
@@ -193,23 +207,114 @@ feature %q{
       @enterprise_user.enterprise_roles.build(enterprise: coordinator1).save
       @enterprise_user.enterprise_roles.build(enterprise: distributor1).save
 
-      login_to_admin_as @enterprise_user
+      quick_login_as @enterprise_user
     end
 
-    context "viewing the edit page" do
-      it "shows the dropdown menu" do
-        distributor1.update_attribute(:abn, '12345678')
-        order = create(:completed_order_with_totals, distributor: distributor1)
-        visit spree.admin_order_path(order)
+    feature "viewing the edit page" do
+      background do
+        Spree::Config[:enable_receipt_printing?] = true
 
+        distributor1.update_attribute(:abn, '12345678')
+        @order = create(:order_with_taxes,
+                        distributor: distributor1,
+                        product_price: 110,
+                        tax_rate_amount: 0.1,
+                        tax_rate_name: "Tax 1")
+        Spree::TaxRate.adjust(@order)
+
+        visit spree.admin_order_path(@order)
+      end
+
+      scenario "shows a list of line_items" do
+        within('table.index tbody', match: :first) do
+          @order.line_items.each do |item|
+            expect(page).to have_selector "td", match: :first, text: item.full_name
+            expect(page).to have_selector "td.price", text: item.single_display_amount
+            expect(page).to have_selector "td.qty", text: item.quantity
+            expect(page).to have_selector "td.total", text: item.display_amount
+          end
+        end
+      end
+
+      scenario "shows the order subtotal" do
+        within('table.index tbody#subtotal') do
+          expect(page).to have_selector "td.total", text: @order.display_item_total
+        end
+      end
+
+      scenario "shows the order charges (non-tax adjustments)" do
+        within('table.index tbody#order-charges') do
+          @order.adjustments.eligible.each do |adjustment|
+            next if (adjustment.originator_type == 'Spree::TaxRate') && (adjustment.amount == 0)
+            expect(page).to have_selector "td", match: :first, text: adjustment.label
+            expect(page).to have_selector "td.total", text: adjustment.display_amount
+          end
+        end
+      end
+
+      scenario "shows the order total" do
+        within('table.index tbody#order-total') do
+          expect(page).to have_selector "td.total", text: @order.display_total
+        end
+      end
+
+      scenario "shows the order taxes" do
+        within('table.index tbody#price-adjustments') do
+          expect(page).to have_selector "td", match: :first, text: "Tax 1"
+          expect(page).to have_selector "td.total", text: Spree::Money.new(10)
+        end
+      end
+
+      scenario "shows the dropdown menu" do
         find("#links-dropdown .ofn-drop-down").click
         within "#links-dropdown" do
-          expect(page).to have_link "Edit", href: spree.edit_admin_order_path(order)
-          expect(page).to have_link "Resend Confirmation", href: spree.resend_admin_order_path(order)
-          expect(page).to have_link "Send Invoice", href: spree.invoice_admin_order_path(order)
-          expect(page).to have_link "Print Invoice", href: spree.print_admin_order_path(order)
-          # expect(page).to have_link "Ship Order", href: spree.fire_admin_order_path(order, :e => 'ship')
-          expect(page).to have_link "Cancel Order", href: spree.fire_admin_order_path(order, :e => 'cancel')
+          expect(page).to have_link "Edit", href: spree.edit_admin_order_path(@order)
+          expect(page).to have_link "Resend Confirmation", href: spree.resend_admin_order_path(@order)
+          expect(page).to have_link "Send Invoice", href: spree.invoice_admin_order_path(@order)
+          expect(page).to have_link "Print Invoice", href: spree.print_admin_order_path(@order)
+          # expect(page).to have_link "Ship Order", href: spree.fire_admin_order_path(@order, :e => 'ship')
+          expect(page).to have_link "Cancel Order", href: spree.fire_admin_order_path(@order, :e => 'cancel')
+        end
+      end
+
+      scenario "can print an order's ticket" do
+        find("#links-dropdown .ofn-drop-down").click
+
+        ticket_window = window_opened_by do
+          within('#links-dropdown') do
+            click_link('Print Ticket')
+          end
+        end
+
+        within_window ticket_window do
+          accept_alert do
+            print_data = page.evaluate_script('printData');
+            elements_in_print_data =
+              [
+                @order.distributor.name,
+                @order.distributor.address.address_part1,
+                @order.distributor.address.address_part2,
+                @order.distributor.contact.email,
+                @order.number,
+                @order.line_items.map { |line_item|
+                  [line_item.quantity.to_s,
+                   line_item.product.name,
+                   line_item.single_display_amount_with_adjustments.format(symbol: false, with_currency: false),
+                   line_item.display_amount_with_adjustments.format(symbol: false, with_currency: false)]
+                },
+                checkout_adjustments_for(@order, exclude: [:line_item]).reject { |a| a.amount == 0 }.map { |adjustment|
+                  [raw(adjustment.label),
+                   display_adjustment_amount(adjustment).format(symbol: false, with_currency: false)]
+                },
+                @order.display_total.format(with_currency: false),
+                display_checkout_taxes_hash(@order).map { |tax_rate, tax_value|
+                  [tax_rate,
+                   tax_value.format(with_currency: false)]
+                },
+                display_checkout_total_less_tax(@order).format(with_currency: false)
+              ]
+            expect(print_data.join).to include(*elements_in_print_data.flatten)
+          end
         end
       end
     end

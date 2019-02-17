@@ -18,7 +18,6 @@ class ShopController < BaseController
       products_json = filter(renderer.products_json)
 
       render json: products_json
-
     rescue OpenFoodNetwork::CachedProductsRenderer::NoProducts
       render status: 404, json: ''
     end
@@ -28,6 +27,7 @@ class ShopController < BaseController
     if request.post?
       if oc = OrderCycle.with_distributor(@distributor).active.find_by_id(params[:order_cycle_id])
         current_order(true).set_order_cycle! oc
+        @current_order_cycle = oc
         render partial: "json/order_cycle"
       else
         render status: 404, json: ""
@@ -44,7 +44,7 @@ class ShopController < BaseController
   private
 
   def filtered_json(products_json)
-    if applicator.send(:rules).any?
+    if applicator.rules.any?
       filter(products_json)
     else
       products_json

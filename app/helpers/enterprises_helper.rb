@@ -55,7 +55,7 @@ module EnterprisesHelper
     if enterprise.sells == 'none'
       enterprise.producer_profile_only ? I18n.t(:profile) : I18n.t(:supplier_only)
     else
-      "Has Shopfront"
+      I18n.t(:has_shopfront)
     end
   end
 
@@ -100,5 +100,9 @@ module EnterprisesHelper
 
   def show_bought_items?
     order_changes_allowed? && current_order.finalised_line_items.present?
+  end
+
+  def subscriptions_enabled?
+    spree_current_user.admin? || spree_current_user.enterprises.where(enable_subscriptions: true).any?
   end
 end

@@ -4,9 +4,9 @@ class ApplicationController < ActionController::Base
   protect_from_forgery
 
   prepend_before_filter :restrict_iframes
+  before_filter :set_cache_headers # Issue #1213, prevent cart emptying via cache when using back button
 
   include EnterprisesHelper
-  helper CssSplitter::ApplicationHelper
 
   def redirect_to(options = {}, response_status = {})
     ::Rails.logger.error("Redirected by #{caller(1).first rescue "unknown"}")
@@ -55,33 +55,9 @@ class ApplicationController < ActionController::Base
   end
 
   def enable_embedded_shopfront
-    whitelist = Spree::Config[:embedded_shopfronts_whitelist]
-    return unless Spree::Config[:enable_embedded_shopfronts] && whitelist.present?
-    return if request.referer && URI(request.referer).scheme != 'https' && !Rails.env.test? && !Rails.env.development?
-
-    response.headers.delete 'X-Frame-Options'
-    response.headers['Content-Security-Policy'] = "frame-ancestors #{whitelist}"
-
-    check_embedded_request
-    set_embedded_layout
-  end
-
-  def check_embedded_request
-    return unless params[:embedded_shopfront]
-
-    # Show embedded shopfront CSS
-    session[:embedded_shopfront] = true
-
-    # Get shopfront slug and set redirect path
-    if params[:controller] == 'enterprises' && params[:action] == 'shop' && params[:id]
-      slug = params[:id]
-      session[:shopfront_redirect] = '/' + slug + '/shop?embedded_shopfront=true'
-    end
-  end
-
-  def set_embedded_layout
-    return unless session[:embedded_shopfront]
-    @shopfront_layout = 'embedded'
+    embed_service = EmbeddedPageService.new(params, session, request, response)
+    embed_service.embed!
+    @shopfront_layout = 'embedded' if embed_service.use_embedded_layout?
   end
 
   def action
@@ -135,6 +111,12 @@ class ApplicationController < ActionController::Base
     block.call
     self.formats = old_formats
     nil
+  end
+
+  def set_cache_headers # https://jacopretorius.net/2014/01/force-page-to-reload-on-browser-back-in-rails.html
+    response.headers["Cache-Control"] = "no-cache, no-store, max-age=0, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "Fri, 01 Jan 1990 00:00:00 GMT"
   end
 
 end

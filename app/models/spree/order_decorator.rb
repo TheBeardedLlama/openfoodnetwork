@@ -10,12 +10,14 @@ end
 Spree::Order.class_eval do
   belongs_to :order_cycle
   belongs_to :distributor, class_name: 'Enterprise'
-  belongs_to :cart
   belongs_to :customer
+  has_one :proxy_order
+  has_one :subscription, through: :proxy_order
 
   validates :customer, presence: true, if: :require_customer?
   validate :products_available_from_new_distribution, :if => lambda { distributor_id_changed? || order_cycle_id_changed? }
-  attr_accessible :order_cycle_id, :distributor_id
+  validate :disallow_guest_order
+  attr_accessible :order_cycle_id, :distributor_id, :customer_id
 
   before_validation :shipping_address_from_distributor
   before_validation :associate_customer, unless: :customer_id?
@@ -41,6 +43,12 @@ Spree::Order.class_eval do
     # go_to_state :confirm, :if => lambda { |order| order.confirmation_required? }
     go_to_state :complete
     remove_transition :from => :delivery, :to => :confirm
+  end
+
+  state_machine.after_transition to: :payment, do: :charge_shipping_and_payment_fees!
+
+  state_machine.event :restart_checkout do
+    transition to: :cart, unless: :completed?
   end
 
   # -- Scopes
@@ -78,6 +86,20 @@ Spree::Order.class_eval do
   def products_available_from_new_distribution
     # Check that the line_items in the current order are available from a newly selected distribution
     errors.add(:base, I18n.t(:spree_order_availability_error)) unless DistributionChangeValidator.new(self).can_change_to_distribution?(distributor, order_cycle)
+  end
+
+  def using_guest_checkout?
+    require_email && !user.andand.id
+  end
+
+  def registered_email?
+    Spree.user_class.exists?(email: email)
+  end
+
+  def disallow_guest_order
+    if using_guest_checkout? && registered_email?
+      errors.add(:base, I18n.t('devise.failure.already_registered'))
+    end
   end
 
   def empty_with_clear_shipping_and_payments!
@@ -271,13 +293,20 @@ Spree::Order.class_eval do
 
   def tax_adjustment_totals
     tax_adjustments.each_with_object(Hash.new) do |adjustment, hash|
-      tax_rates = adjustment.tax_rates
+      tax_rates = TaxRateFinder.tax_rates_of(adjustment)
       tax_rates_hash = Hash[tax_rates.collect do |tax_rate|
         tax_amount = tax_rates.one? ? adjustment.included_tax : tax_rate.compute_tax(adjustment.amount)
-        [tax_rate.amount, tax_amount]
+        [tax_rate, tax_amount]
       end]
       hash.update(tax_rates_hash) { |_tax_rate, amount1, amount2| amount1 + amount2 }
     end
+  end
+
+  def price_adjustment_totals
+    Hash[tax_adjustment_totals.map do |tax_rate, tax_amount|
+      [tax_rate.name,
+       Spree::Money.new(tax_amount, currency: currency)]
+    end]
   end
 
   def has_taxes_included
@@ -291,7 +320,9 @@ Spree::Order.class_eval do
   # Overrride of Spree method, that allows us to send separate confirmation emails to user and shop owners
   # And separately, to skip sending confirmation email completely for user invoice orders
   def deliver_order_confirmation_email
-    Delayed::Job.enqueue ConfirmOrderJob.new(id) unless account_invoice?
+    unless account_invoice? || subscription.present?
+      Delayed::Job.enqueue ConfirmOrderJob.new(id)
+    end
   end
 
   def changes_allowed?
@@ -316,6 +347,13 @@ Spree::Order.class_eval do
     errors.add(:base, e.message) and return result
   end
 
+  # Override or Spree method. Used to prevent payments on subscriptions from being processed in the normal way.
+  # ie. they are 'hidden' from processing logic until after the order cycle has closed.
+  def pending_payments
+    return [] if subscription.present? && order_cycle.orders_close_at.andand > Time.zone.now
+    payments.select {|p| p.state == "checkout"} # Original definition
+  end
+
   private
 
   def shipping_address_from_distributor
@@ -325,15 +363,19 @@ Spree::Order.class_eval do
       # We can refactor this when we drop the multi-step checkout option
       #
       if shipping_method.andand.require_ship_address == false
-        self.ship_address = distributor.address.clone
-
-        if bill_address
-          ship_address.firstname = bill_address.firstname
-          ship_address.lastname = bill_address.lastname
-          ship_address.phone = bill_address.phone
-        end
+        self.ship_address = address_from_distributor
       end
     end
+  end
+
+  def address_from_distributor
+    address = distributor.address.clone
+    if bill_address
+      address.firstname = bill_address.firstname
+      address.lastname = bill_address.lastname
+      address.phone = bill_address.phone
+    end
+    address
   end
 
   def provided_by_order_cycle?(line_item)
@@ -378,17 +420,13 @@ Spree::Order.class_eval do
     adjustment.state = state
   end
 
-  # object_params sets the payment amount to the order total, but it does this before
-  # the shipping method is set. This results in the customer not being charged for their
-  # order's shipping. To fix this, we refresh the payment amount here.
+  # object_params sets the payment amount to the order total, but it does this
+  # before the shipping method is set. This results in the customer not being
+  # charged for their order's shipping. To fix this, we refresh the payment
+  # amount here.
   def charge_shipping_and_payment_fees!
     update_totals
     return unless payments.any?
     payments.first.update_attribute :amount, total
   end
-end
-
-Spree::Order.state_machine.after_transition to: :payment, do: :charge_shipping_and_payment_fees!
-Spree::Order.state_machine.event :restart_checkout do
-  transition :to => :cart, unless: :completed?
 end

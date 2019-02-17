@@ -1,21 +1,18 @@
-require 'open_food_network/order_cycle_permissions'
-require 'open_food_network/order_cycle_form_applicator'
-
 module Admin
   class OrderCyclesController < ResourceController
     include OrderCyclesHelper
 
-    prepend_before_filter :load_data_for_index, :only => :index
+    before_filter :load_data_for_index, only: :index
     before_filter :require_coordinator, only: :new
     before_filter :remove_protected_attrs, only: [:update]
-    before_filter :remove_unauthorized_bulk_attrs, only: [:bulk_update]
+    before_filter :require_order_cycle_set_params, only: [:bulk_update]
     around_filter :protect_invalid_destroy, only: :destroy
 
     def index
       respond_to do |format|
         format.html
         format.json do
-          render_as_json @collection, ams_prefix: params[:ams_prefix], current_user: spree_current_user
+          render_as_json @collection, ams_prefix: params[:ams_prefix], current_user: spree_current_user, subscriptions_count: SubscriptionsCount.new(@collection)
         end
       end
     end
@@ -39,46 +36,36 @@ module Admin
     end
 
     def create
-      @order_cycle = OrderCycle.new(params[:order_cycle])
+      @order_cycle_form = OrderCycleForm.new(@order_cycle, params, spree_current_user)
 
-      respond_to do |format|
-        if @order_cycle.save
-          OpenFoodNetwork::OrderCycleFormApplicator.new(@order_cycle, spree_current_user).go!
-
-          flash[:notice] = I18n.t(:order_cycles_create_notice)
-          format.html { redirect_to admin_order_cycles_path }
-          format.json { render :json => {:success => true} }
-        else
-          format.html
-          format.json { render :json => {:success => false} }
-        end
+      if @order_cycle_form.save
+        flash[:notice] = I18n.t(:order_cycles_create_notice)
+        render json: { success: true }
+      else
+        render json: { errors: @order_cycle.errors.full_messages }, status: :unprocessable_entity
       end
     end
 
     def update
-      @order_cycle = OrderCycle.find params[:id]
+      @order_cycle_form = OrderCycleForm.new(@order_cycle, params, spree_current_user)
 
-      respond_to do |format|
-        if @order_cycle.update_attributes(params[:order_cycle])
-          unless params[:order_cycle][:incoming_exchanges].nil? && params[:order_cycle][:outgoing_exchanges].nil?
-            # Only update apply exchange information if it is actually submmitted
-            OpenFoodNetwork::OrderCycleFormApplicator.new(@order_cycle, spree_current_user).go!
-          end
+      if @order_cycle_form.save
+        respond_to do |format|
           flash[:notice] = I18n.t(:order_cycles_update_notice) if params[:reloading] == '1'
           format.html { redirect_to main_app.edit_admin_order_cycle_path(@order_cycle) }
-          format.json { render :json => {:success => true}  }
-        else
-          format.json { render :json => {:success => false} }
+          format.json { render json: { :success => true } }
         end
+      else
+        render json: { errors: @order_cycle.errors.full_messages }, status: :unprocessable_entity
       end
     end
 
     def bulk_update
-      @order_cycle_set = params[:order_cycle_set] && OrderCycleSet.new(params[:order_cycle_set])
-      if @order_cycle_set.andand.save
-        redirect_to main_app.admin_order_cycles_path, notice: I18n.t(:order_cycles_bulk_update_notice)
+      if order_cycle_set.andand.save
+        render_as_json @order_cycles, ams_prefix: 'index', current_user: spree_current_user, subscriptions_count: SubscriptionsCount.new(@collection)
       else
-        render :index
+        order_cycle = order_cycle_set.collection.find{ |oc| oc.errors.present? }
+        render json: { errors: order_cycle.errors.full_messages }, status: :unprocessable_entity
       end
     end
 
@@ -97,20 +84,23 @@ module Admin
 
 
     protected
+
     def collection
+      return Enterprise.where("1=0") unless json_request?
+      return order_cycles_from_set if params[:order_cycle_set]
       ocs = if params[:as] == "distributor"
-        OrderCycle.ransack(params[:q]).result.
+        OrderCycle.preload(:schedules).ransack(params[:q]).result.
           involving_managed_distributors_of(spree_current_user).order('updated_at DESC')
       elsif params[:as] == "producer"
-        OrderCycle.ransack(params[:q]).result.
+        OrderCycle.preload(:schedules).ransack(params[:q]).result.
           involving_managed_producers_of(spree_current_user).order('updated_at DESC')
       else
-        OrderCycle.ransack(params[:q]).result.accessible_by(spree_current_user)
+        OrderCycle.preload(:schedules).ransack(params[:q]).result.accessible_by(spree_current_user)
       end
 
-      ocs.undated +
-        ocs.soonest_closing +
-        ocs.soonest_opening +
+      ocs.undated |
+        ocs.soonest_closing |
+        ocs.soonest_opening |
         ocs.closed
     end
 
@@ -119,15 +109,16 @@ module Admin
     end
 
     private
+
     def load_data_for_index
-      @show_more = !!params[:show_more]
-      unless @show_more || params[:q].andand[:orders_close_at_gt].present?
+      if json_request?
         # Split ransack params into all those that currently exist and new ones to limit returned ocs to recent or undated
+        orders_close_at_gt = params[:q].andand.delete(:orders_close_at_gt) || 31.days.ago
         params[:q] = {
-          g: [ params.delete(:q) || {}, { m: 'or', orders_close_at_gt: 31.days.ago, orders_close_at_null: true } ]
+          g: [ params.delete(:q) || {}, { m: 'or', orders_close_at_gt: orders_close_at_gt, orders_close_at_null: true } ]
         }
+        @collection = collection
       end
-      @order_cycle_set = OrderCycleSet.new :collection => (@collection = collection)
     end
 
     def require_coordinator
@@ -135,7 +126,7 @@ module Admin
         return
       end
 
-      available_coordinators = permitted_coordinating_enterprises_for(@order_cycle).select(&:confirmed?)
+      available_coordinators = permitted_coordinating_enterprises_for(@order_cycle)
       case available_coordinators.count
       when 0
         flash[:error] = I18n.t(:order_cycles_no_permission_to_coordinate_error)
@@ -149,11 +140,17 @@ module Admin
     end
 
     def protect_invalid_destroy
-      begin
-        yield
-      rescue ActiveRecord::InvalidForeignKey
+      # Can't delete if OC is linked to any orders or schedules
+      if @order_cycle.schedules.any?
         redirect_to main_app.admin_order_cycles_url
-        flash[:error] = I18n.t(:order_cycles_no_permission_to_delete_error)
+        flash[:error] = I18n.t('admin.order_cycles.destroy_errors.schedule_present')
+      else
+        begin
+          yield
+        rescue ActiveRecord::InvalidForeignKey
+          redirect_to main_app.admin_order_cycles_url
+          flash[:error] = I18n.t('admin.order_cycles.destroy_errors.orders_present')
+        end
       end
     end
 
@@ -166,18 +163,30 @@ module Admin
     end
 
     def remove_unauthorized_bulk_attrs
-      if params.key? :order_cycle_set
-        params[:order_cycle_set][:collection_attributes].each do |i, hash|
-          order_cycle = OrderCycle.find(hash[:id])
-          unless Enterprise.managed_by(spree_current_user).include?(order_cycle.andand.coordinator)
-            params[:order_cycle_set][:collection_attributes].delete i
-          end
+      params[:order_cycle_set][:collection_attributes].each do |i, hash|
+        order_cycle = OrderCycle.find(hash[:id])
+        unless Enterprise.managed_by(spree_current_user).include?(order_cycle.andand.coordinator)
+          params[:order_cycle_set][:collection_attributes].delete i
         end
       end
     end
 
+    def order_cycles_from_set
+      remove_unauthorized_bulk_attrs
+      OrderCycle.where(id: params[:order_cycle_set][:collection_attributes].map{ |k,v| v[:id] })
+    end
+
+    def order_cycle_set
+      @order_cycle_set ||= OrderCycleSet.new(@order_cycles, params[:order_cycle_set])
+    end
+
+    def require_order_cycle_set_params
+      return if params[:order_cycle_set]
+      render json: { errors: t('admin.order_cycles.bulk_update.no_data') }, status: :unprocessable_entity
+    end
+
     def ams_prefix_whitelist
-      [:basic]
+      [:basic, :index]
     end
   end
 end

@@ -69,9 +69,9 @@ module OpenFoodNetwork
       granted_distributors = related_enterprises_granted(:add_to_order_cycle, by: managed_enterprises.is_primary_producer)
       produced = Spree::Order.with_line_items_variants_and_products_outer.
         where(
-      "spree_orders.distributor_id IN (?) AND spree_products.supplier_id IN (?)",
-      granted_distributors,
-      related_enterprises_granting(:add_to_order_cycle, to: granted_distributors).merge(managed_enterprises.is_primary_producer)
+          "spree_orders.distributor_id IN (?) AND spree_products.supplier_id IN (?)",
+          granted_distributors,
+          related_enterprises_granting(:add_to_order_cycle, to: granted_distributors).merge(managed_enterprises.is_primary_producer)
         ).pluck(:id)
 
       Spree::Order.where(id: editable | produced)
@@ -127,6 +127,21 @@ module OpenFoodNetwork
       @user.enterprises.length == 1
     end
 
+    def editable_schedules
+      Schedule.joins(:order_cycles).where(order_cycles: { id: OrderCycle.managed_by(@user).pluck(:id) }).select("DISTINCT schedules.*")
+    end
+
+    def visible_schedules
+      Schedule.joins(:order_cycles).where(order_cycles: { id: OrderCycle.accessible_by(@user).pluck(:id) }).select("DISTINCT schedules.*")
+    end
+
+    def editable_subscriptions
+      Subscription.where('subscriptions.shop_id IN (?)', managed_enterprises)
+    end
+
+    def visible_subscriptions
+      editable_subscriptions
+    end
 
     private
 

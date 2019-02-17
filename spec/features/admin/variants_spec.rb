@@ -40,7 +40,7 @@ feature %q{
     page.find('table.index .icon-edit').click
 
     # Then I should not see a traditional option value field for the unit-related option value
-    expect(page).to_not have_selector "div[data-hook='presentation'] input"
+    expect(page).to have_no_selector "div[data-hook='presentation'] input"
 
     # And I should see unit value and description fields for the unit-related option value
     page.should have_field "unit_value_human", with: "1"
@@ -66,7 +66,9 @@ feature %q{
     visit spree.admin_product_variants_path p
 
     within "tr#spree_variant_#{v.id}" do
-      page.find('a.delete-resource').click
+      accept_alert do
+        page.find('a.delete-resource').click
+      end
     end
 
     page.should_not have_selector "tr#spree_variant_#{v.id}"

@@ -9,7 +9,7 @@ describe Admin::CustomersController, type: :controller do
 
     context "html" do
       before do
-        controller.stub spree_current_user: enterprise.owner
+        allow(controller).to receive(:spree_current_user) { enterprise.owner }
       end
 
       it "returns an empty @collection" do
@@ -23,7 +23,7 @@ describe Admin::CustomersController, type: :controller do
 
       context "where I manage the enterprise" do
         before do
-          controller.stub spree_current_user: enterprise.owner
+          allow(controller).to receive(:spree_current_user) { enterprise.owner }
         end
 
         context "and enterprise_id is given in params" do
@@ -50,7 +50,7 @@ describe Admin::CustomersController, type: :controller do
 
       context "and I do not manage the enterprise" do
         before do
-          controller.stub spree_current_user: another_enterprise.owner
+          allow(controller).to receive(:spree_current_user) { another_enterprise.owner }
         end
 
         it "returns an empty collection" do
@@ -72,7 +72,7 @@ describe Admin::CustomersController, type: :controller do
         render_views
 
         before do
-          controller.stub spree_current_user: enterprise.owner
+          allow(controller).to receive(:spree_current_user) { enterprise.owner }
         end
 
         it "allows me to update the customer" do
@@ -85,7 +85,7 @@ describe Admin::CustomersController, type: :controller do
 
       context "where I don't manage the customer's enterprise" do
         before do
-          controller.stub spree_current_user: another_enterprise.owner
+          allow(controller).to receive(:spree_current_user) { another_enterprise.owner }
         end
 
         it "prevents me from updating the customer" do
@@ -109,7 +109,7 @@ describe Admin::CustomersController, type: :controller do
     context "json" do
       context "where I manage the customer's enterprise" do
         before do
-          controller.stub spree_current_user: enterprise.owner
+          allow(controller).to receive(:spree_current_user) { enterprise.owner }
         end
 
         it "allows me to create the customer" do
@@ -119,7 +119,7 @@ describe Admin::CustomersController, type: :controller do
 
       context "where I don't manage the customer's enterprise" do
         before do
-          controller.stub spree_current_user: another_enterprise.owner
+          allow(controller).to receive(:spree_current_user) { another_enterprise.owner }
         end
 
         it "prevents me from creating the customer" do
@@ -129,11 +129,44 @@ describe Admin::CustomersController, type: :controller do
 
       context "where I am the admin user" do
         before do
-          controller.stub spree_current_user: create(:admin_user)
+          allow(controller).to receive(:spree_current_user) { create(:admin_user) }
         end
 
         it "allows admins to create the customer" do
           expect { create_customer enterprise }.to change(Customer, :count).by(1)
+        end
+      end
+    end
+  end
+
+  describe "show" do
+    let(:enterprise) { create(:distributor_enterprise) }
+    let(:another_enterprise) { create(:distributor_enterprise) }
+
+    context "json" do
+      let!(:customer) { create(:customer, enterprise: enterprise) }
+
+      context "where I manage the customer's enterprise" do
+        render_views
+
+        before do
+          allow(controller).to receive(:spree_current_user) { enterprise.owner }
+        end
+
+        it "renders the customer as json" do
+          spree_get :show, format: :json, id: customer.id
+          expect(JSON.parse(response.body)["id"]).to eq customer.id
+        end
+      end
+
+      context "where I don't manage the customer's enterprise" do
+        before do
+          allow(controller).to receive(:spree_current_user) { another_enterprise.owner }
+        end
+
+        it "prevents me from updating the customer" do
+          spree_get :show, format: :json, id: customer.id
+          expect(response).to redirect_to spree.unauthorized_path
         end
       end
     end

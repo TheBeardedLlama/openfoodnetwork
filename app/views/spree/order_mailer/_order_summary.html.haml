@@ -11,7 +11,7 @@
         %h4
           = t :email_order_summary_price
   %tbody
-    - @order.line_items.each do |item|
+    - @order.line_items.sorted_by_name_and_unit_value.each do |item|
       %tr
         %td
           = render 'spree/shared/line_item_name', line_item: item
@@ -19,7 +19,11 @@
           %small
             %em= raw(item.variant.product.supplier.name)
         %td{:align => "right"}
+          - if @changes && @changes[item.id].present?
+            %del.quantity_was= @changes[item.id]
           = item.quantity
+          -# Report changes made to subscriptions
+
         %td{:align => "right"}
           = item.display_amount_with_adjustments
   %tfoot

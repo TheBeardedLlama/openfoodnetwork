@@ -6,6 +6,7 @@ feature %q{
 }, js: true do
   include AuthenticationWorkflow
   include WebHelper
+  include OpenFoodNetwork::EmailHelper
 
 
   context "as a site administrator" do
@@ -42,6 +43,8 @@ feature %q{
       select 'One', from: 'enterprise_role_enterprise_id'
       click_button 'Create'
 
+      # Wait for row to appear since have_relationship doesn't wait
+      page.should have_selector 'tr', count: 3
       page.should have_relationship u, e
       EnterpriseRole.where(user_id: u, enterprise_id: e).should be_present
     end
@@ -72,16 +75,112 @@ feature %q{
       page.should have_relationship u, e
 
       within("#enterprise_role_#{er.id}") do
-        find("a.delete-enterprise-role").click
+        accept_alert do
+          find("a.delete-enterprise-role").click
+        end
       end
 
+      # Wait for row to disappear, otherwise have_relationship waits 30 seconds.
+      page.should_not have_selector "#enterprise_role_#{er.id}"
       page.should_not have_relationship u, e
       EnterpriseRole.where(id: er.id).should be_empty
     end
+
+    describe "using the enterprise managers interface" do
+      let!(:user1) { create(:user, email: 'user1@example.com') }
+      let!(:user2) { create(:user, email: 'user2@example.com') }
+      let!(:user3) { create(:user, email: 'user3@example.com', confirmed_at: nil) }
+      let(:new_email) { 'new@manager.com' }
+
+      let!(:enterprise) { create(:enterprise, name: 'Test Enterprise', owner: user1) }
+      let!(:enterprise_role) { create(:enterprise_role, user_id: user2.id, enterprise_id: enterprise.id) }
+
+      before do
+        click_link 'Enterprises'
+        click_link 'Test Enterprise'
+        navigate_to_enterprise_users
+        expect(page).to have_selector "table.managers"
+      end
+
+      it "lists managers and shows icons for owner, contact, and email confirmation" do
+        within 'table.managers' do
+          expect(page).to have_content user1.email
+          expect(page).to have_content user2.email
+
+          within "tr#manager-#{user1.id}" do
+            # user1 is both the enterprise owner and contact, and has email confirmed
+            expect(page).to have_css 'i.owner'
+            expect(page).to have_css 'i.contact'
+            expect(page).to have_css 'i.confirmed'
+          end
+        end
+      end
+
+      it "allows adding new managers" do
+        within 'table.managers' do
+          targetted_select2_search user3.email, from: '#s2id_ignored'
+
+          # user3 has been added and has an unconfirmed email address
+          expect(page).to have_css "tr#manager-#{user3.id}"
+          within "tr#manager-#{user3.id}" do
+            expect(page).to have_css 'i.unconfirmed'
+          end
+        end
+      end
+
+      it "shows changes to enterprise contact or owner" do
+        select2_select user2.email, from: 'receives_notifications_dropdown'
+        within('#save-bar') { click_button 'Update' }
+        navigate_to_enterprise_users
+        expect(page).to have_selector "table.managers"
+
+        within 'table.managers' do
+          within "tr#manager-#{user1.id}" do
+            expect(page).to have_css 'i.owner'
+            expect(page).to have_no_css 'i.contact'
+          end
+          within "tr#manager-#{user2.id}" do
+            expect(page).to have_css 'i.contact'
+          end
+        end
+      end
+
+      it "can invite unregistered users to be managers" do
+        setup_email
+        find('a.button.help-modal').click
+        expect(page).to have_css '#invite-manager-modal'
+
+        within '#invite-manager-modal' do
+          fill_in 'invite_email', with: new_email
+          click_button I18n.t('js.admin.modals.invite')
+          expect(page).to have_content I18n.t('user_invited', email: new_email)
+          click_button I18n.t('js.admin.modals.close')
+        end
+
+        expect(page).not_to have_selector "#invite-manager-modal"
+        expect(page).to have_selector "table.managers"
+
+        new_user = Spree::User.find_by_email_and_confirmed_at(new_email, nil)
+        expect(Enterprise.managed_by(new_user)).to include enterprise
+
+        within 'table.managers' do
+          expect(page).to have_content new_email
+
+          within "tr#manager-#{new_user.id}" do
+            expect(page).to have_css 'i.unconfirmed'
+          end
+        end
+      end
+    end
   end
 
-
   private
+
+  def navigate_to_enterprise_users
+    within ".side_menu" do
+      click_link "Users"
+    end
+  end
 
   def have_relationship(user, enterprise)
     have_table_row [user.email, 'manages', enterprise.name, '']

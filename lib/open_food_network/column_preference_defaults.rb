@@ -1,6 +1,5 @@
 module OpenFoodNetwork
   module ColumnPreferenceDefaults
-
     private
 
     # NOTE: These methods define valid column names (via hash keys)
@@ -20,7 +19,8 @@ module OpenFoodNetwork
         reset:        { name: I18n.t("#{node}.enable_reset?"),  visible: false },
         inheritance:  { name: I18n.t("#{node}.inherit?"),       visible: false },
         tags:         { name: I18n.t("admin.tags"),             visible: false },
-        visibility:   { name: I18n.t("#{node}.hide"),           visible: false }
+        visibility:   { name: I18n.t("#{node}.hide"),           visible: false },
+        import_date:   { name: I18n.t("#{node}.import_date"),   visible: false }
       }
     end
 
@@ -55,9 +55,10 @@ module OpenFoodNetwork
       }
     end
 
-    def products_bulk_edit_columns
-      node = "spree.admin.products.bulk_edit.products_head"
+    def products_index_columns
+      node = "spree.admin.products.index.products_head"
       {
+        image:                { name: I18n.t("admin.image"),                   visible: true },
         producer:             { name: I18n.t("admin.producer"),                visible: true },
         sku:                  { name: I18n.t("admin.sku"),                     visible: false },
         name:                 { name: I18n.t("admin.name"),                    visible: true },
@@ -68,7 +69,8 @@ module OpenFoodNetwork
         category:             { name: I18n.t("#{node}.category"),              visible: false },
         tax_category:         { name: I18n.t("#{node}.tax_category"),          visible: false },
         inherits_properties:  { name: I18n.t("#{node}.inherits_properties?"),  visible: false },
-        available_on:         { name: I18n.t("#{node}.available_on"),          visible: false }
+        available_on:         { name: I18n.t("#{node}.available_on"),          visible: false },
+        import_date:          { name: I18n.t("#{node}.import_date"),           visible: false }
       }
     end
 
@@ -80,6 +82,35 @@ module OpenFoodNetwork
         package:  { name: I18n.t("#{node}.package"),    visible: true },
         status:   { name: I18n.t("#{node}.status"),     visible: true },
         manage:   { name: I18n.t("#{node}.manage"),     visible: true }
+      }
+    end
+
+    def order_cycles_index_columns
+      node = "admin.order_cycles.index"
+      {
+        name:         { name: I18n.t("admin.name"),         visible: true },
+        schedules:    { name: I18n.t("#{node}.schedules"),  visible: true },
+        open:         { name: I18n.t("open"),               visible: true },
+        close:        { name: I18n.t("close"),              visible: true },
+        producers:    { name: I18n.t("label_producers"),    visible: false },
+        coordinator:  { name: I18n.t("coordinator"),        visible: true },
+        shops:        { name: I18n.t("label_shops"),        visible: false },
+        products:     { name: I18n.t("products"),           visible: true }
+      }
+    end
+
+    def subscriptions_index_columns
+      _node = "admin.subscriptions.index"
+      {
+        customer:         { name: I18n.t("admin.customer"),         visible: true },
+        schedule:         { name: I18n.t("admin.schedule"),         visible: true },
+        items:            { name: I18n.t("items"),                  visible: true },
+        orders:           { name: I18n.t("orders"),                 visible: true },
+        state:            { name: I18n.t("admin.status_state"),     visible: true },
+        begins_on:        { name: I18n.t("admin.begins_on"),        visible: false },
+        ends_on:          { name: I18n.t("admin.ends_on"),          visible: false },
+        payment_method:   { name: I18n.t("admin.payment_method"),   visible: false },
+        shipping_method:  { name: I18n.t("admin.shipping_method"),  visible: false }
       }
     end
   end

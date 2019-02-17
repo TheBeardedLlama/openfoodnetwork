@@ -10,7 +10,7 @@ feature 'shipping methods' do
 
   context "as a site admin" do
     before(:each) do
-      login_to_admin_section
+      quick_login_as_admin
     end
 
     scenario "creating a shipping method owned by some distributors" do
@@ -29,10 +29,13 @@ feature 'shipping methods' do
       fill_in 'shipping_method_name', with: 'Carrier Pidgeon'
       check "shipping_method_distributor_ids_#{d1.id}"
       check "shipping_method_distributor_ids_#{d2.id}"
-      click_button 'Create'
+      click_button I18n.t("actions.create")
+
+      expect(page).to have_no_button I18n.t("actions.create")
 
       # Then the shipping method should have its distributor set
-      flash_message.should == 'Shipping method "Carrier Pidgeon" has been successfully created!'
+      message = "Shipping method \"Carrier Pidgeon\" has been successfully created!"
+      expect(page).to have_flash_message message
 
       sm = Spree::ShippingMethod.last
       sm.name.should == 'Carrier Pidgeon'
@@ -73,12 +76,12 @@ feature 'shipping methods' do
     before(:each) do
       enterprise_user.enterprise_roles.build(enterprise: distributor1).save
       enterprise_user.enterprise_roles.build(enterprise: distributor2).save
-      login_to_admin_as enterprise_user
+      quick_login_as enterprise_user
     end
 
     it "creating a shipping method" do
-      click_link 'Enterprises'
-      within("#e_#{distributor1.id}") { click_link 'Manage' }
+      visit admin_enterprises_path
+      within("#e_#{distributor1.id}") { click_link 'Settings' }
       within(".side_menu") do
         click_link "Shipping Methods"
       end
@@ -94,10 +97,16 @@ feature 'shipping methods' do
 
       check "shipping_method_distributor_ids_#{distributor1.id}"
       find(:css, "tags-input .tags input").set "local\n"
+      within(".tags .tag-list") do
+        expect(page).to have_css '.tag-item'
+      end
 
-      click_button 'Create'
+      click_button I18n.t("actions.create")
 
-      flash_message.should == 'Shipping method "Teleport" has been successfully created!'
+      expect(page).to have_no_button I18n.t("actions.create")
+      message = "Shipping method \"Teleport\" has been successfully created!"
+      expect(page).to have_flash_message message
+
       expect(first('tags-input .tag-list ti-tag-item')).to have_content "local"
 
       shipping_method = Spree::ShippingMethod.find_by_name('Teleport')
@@ -130,8 +139,8 @@ feature 'shipping methods' do
       sm1
       sm2
 
-      click_link 'Enterprises'
-      within("#e_#{distributor1.id}") { click_link 'Manage' }
+      visit admin_enterprises_path
+      within("#e_#{distributor1.id}") { click_link 'Settings' }
       within(".side_menu") do
         click_link "Shipping Methods"
       end
@@ -139,7 +148,7 @@ feature 'shipping methods' do
       page.should     have_content sm2.name
 
       click_link 'Enterprises'
-      within("#e_#{distributor2.id}") { click_link 'Manage' }
+      within("#e_#{distributor2.id}") { click_link 'Settings' }
       within(".side_menu") do
         click_link "Shipping Methods"
       end

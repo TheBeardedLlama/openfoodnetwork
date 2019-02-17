@@ -38,6 +38,7 @@ Spree::Product.class_eval do
   before_validation :sanitize_permalink
   before_save :add_primary_taxon_to_taxons
   after_touch :touch_distributors
+  after_save :remove_previous_primary_taxon_from_taxons
   after_save :ensure_standard_variant
   after_save :update_units
   after_save :refresh_products_cache
@@ -97,12 +98,14 @@ Spree::Product.class_eval do
   # Find products that are distributed by the given order cycle
   scope :in_order_cycle, lambda { |order_cycle| with_order_cycles_inner.
     merge(Exchange.outgoing).
-    where('order_cycles.id = ?', order_cycle) }
+    where('order_cycles.id = ?', order_cycle) 
+  }
 
   scope :in_an_active_order_cycle, lambda { with_order_cycles_inner.
     merge(OrderCycle.active).
     merge(Exchange.outgoing).
-    where('order_cycles.id IS NOT NULL') }
+    where('order_cycles.id IS NOT NULL') 
+  }
 
   scope :by_producer, joins(:supplier).order('enterprises.name')
   scope :by_name, order('name')
@@ -113,6 +116,13 @@ Spree::Product.class_eval do
     else
       where('supplier_id IN (?)', user.enterprises)
     end
+  }
+
+  scope :stockable_by, lambda { |enterprise|
+    return where('1=0') if enterprise.blank?
+    permitted_producer_ids = EnterpriseRelationship.joins(:parent).permitting(enterprise)
+      .with_permission(:add_to_order_cycle).where(enterprises: { is_primary_producer: true }).pluck(:parent_id)
+    return where('spree_products.supplier_id IN (?)', [enterprise.id] | permitted_producer_ids)
   }
 
 
@@ -163,6 +173,11 @@ Spree::Product.class_eval do
 
   def variants_distributed_by(order_cycle, distributor)
     order_cycle.variants_distributed_by(distributor).where(product_id: self)
+  end
+
+  # Get the most recent import_date of a product's variants
+  def import_date
+    variants.map(&:import_date).compact.max
   end
 
   # Build a product distribution for each distributor
@@ -226,6 +241,11 @@ Spree::Product.class_eval do
 
   def add_primary_taxon_to_taxons
     taxons << primary_taxon unless taxons.include? primary_taxon
+  end
+
+  def remove_previous_primary_taxon_from_taxons
+    return unless primary_taxon_id_changed? && primary_taxon_id_was
+    taxons.destroy(primary_taxon_id_was)
   end
 
   def self.all_variant_unit_option_types

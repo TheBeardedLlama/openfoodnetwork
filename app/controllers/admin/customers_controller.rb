@@ -1,3 +1,5 @@
+require 'open_food_network/address_finder'
+
 module Admin
   class CustomersController < ResourceController
     before_filter :load_managed_shops, only: :index, if: :html_request?
@@ -19,6 +21,10 @@ module Admin
           render_as_json @collection, tag_rule_mapping: tag_rule_mapping
         end
       end
+    end
+
+    def show
+      render_as_json @customer, ams_prefix: params[:ams_prefix]
     end
 
     def create
@@ -68,6 +74,10 @@ module Admin
     def user_can_create_customer?
       spree_current_user.admin? ||
         spree_current_user.enterprises.include?(@customer.enterprise)
+    end
+
+    def ams_prefix_whitelist
+      [:subscription]
     end
   end
 end

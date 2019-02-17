@@ -2,7 +2,10 @@ require 'spec_helper'
 require 'spree/api/testing_support/helpers'
 
 describe UserPasswordsController, type: :controller do
+  include OpenFoodNetwork::EmailHelper
+
   let(:user) { create(:user) }
+  let(:unconfirmed_user) { create(:user, confirmed_at: nil) }
 
   before do
     @request.env["devise.mapping"] = Devise.mappings[:spree_user]
@@ -31,20 +34,29 @@ describe UserPasswordsController, type: :controller do
   end
 
   it "renders Darkswarm" do
+    setup_email
     clear_jobs
+
     user.send_reset_password_instructions
     flush_jobs # Send the reset password instructions
+
     user.reload
     spree_get :edit, reset_password_token: user.reset_password_token
-    response.should render_template "user_passwords/edit"
+
+    expect(response).to render_template "user_passwords/edit"
   end
 
   describe "via ajax" do
-    it "returns errors" do
+    it "returns error when email not found" do
       xhr :post, :create, spree_user: {}, use_route: :spree
-      json = JSON.parse(response.body)
-      response.status.should == 401
-      json.should == {"email"=>["can't be blank"]}
+      expect(response.status).to eq 404
+      expect(json_response).to eq 'error' => I18n.t('email_not_found')
+    end
+
+    it "returns error when user is unconfirmed" do
+      xhr :post, :create, spree_user: {email: unconfirmed_user.email}, use_route: :spree
+      expect(response.status).to eq 401
+      expect(json_response).to eq 'error' => I18n.t('email_unconfirmed')
     end
   end
 end

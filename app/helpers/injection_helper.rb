@@ -1,21 +1,17 @@
 require 'open_food_network/enterprise_injection_data'
 
 module InjectionHelper
-  def inject_enterprises
-    inject_json_ams "enterprises", Enterprise.activated.includes(address: :state).all, Api::EnterpriseSerializer, enterprise_injection_data
+  def inject_enterprises(enterprises = Enterprise.activated.includes(address: :state).all)
+    inject_json_ams(
+      'enterprises',
+      enterprises,
+      Api::EnterpriseSerializer,
+      enterprise_injection_data
+    )
   end
 
   def inject_enterprise_and_relatives
     inject_json_ams "enterprises", current_distributor.relatives_including_self.activated.includes(address: :state).all, Api::EnterpriseSerializer, enterprise_injection_data
-  end
-
-  def inject_shop_enterprises
-    ocs = if current_order_cycle
-            [current_order_cycle]
-          else
-            OrderCycle.not_closed.with_distributor(current_distributor)
-          end
-    inject_json_ams "enterprises", current_distributor.plus_relatives_and_oc_producers(ocs).activated.includes(address: :state).all, Api::EnterpriseSerializer, enterprise_injection_data
   end
 
   def inject_group_enterprises
@@ -69,14 +65,17 @@ module InjectionHelper
   end
 
   def inject_shops
-    shops = Enterprise.where(id: @orders.pluck(:distributor_id).uniq)
+    customers = spree_current_user.customers.of_regular_shops
+    shops = Enterprise.where(id: @orders.pluck(:distributor_id).uniq | customers.pluck(:enterprise_id))
     inject_json_ams "shops", shops.all, Api::ShopForOrdersSerializer
   end
 
   def inject_saved_credit_cards
-    if spree_current_user
-      data = spree_current_user.credit_cards.with_payment_profile.all
-    end
+    data = if spree_current_user
+             spree_current_user.credit_cards.with_payment_profile.all
+           else
+             []
+           end
 
     inject_json_ams "savedCreditCards", data, Api::CreditCardSerializer
   end
@@ -87,10 +86,12 @@ module InjectionHelper
 
   def inject_json_ams(name, data, serializer, opts = {})
     if data.is_a?(Array)
-      json = ActiveModel::ArraySerializer.new(data, {each_serializer: serializer}.merge(opts)).to_json
-    else
-      json = serializer.new(data, opts).to_json
+      opts = { each_serializer: serializer }.merge(opts)
+      serializer = ActiveModel::ArraySerializer
     end
+
+    serializer_instance = serializer.new(data, opts)
+    json = serializer_instance.to_json
     render partial: "json/injection_ams", locals: {name: name, json: json}
   end
 

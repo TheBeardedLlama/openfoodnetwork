@@ -1,0 +1,27 @@
+@import '../plugins/font-awesome';
+
+.todolist{
+  .todo {
+    &.done {
+      .title {
+        color: #aaaaaa;
+
+        a {
+          color: #aaaaaa;
+        }
+      }
+
+      i {
+        color: #aaaaaa;
+      }
+
+      .steps {
+        display: none;
+      }
+
+      i {
+        @extend .icon-check
+      }
+    }
+  }
+}

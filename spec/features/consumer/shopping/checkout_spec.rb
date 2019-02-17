@@ -64,19 +64,18 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       let(:user) { create(:user) }
 
       def fill_out_form
-        toggle_shipping
         choose sm1.name
-        toggle_payment
         choose pm1.name
-        toggle_details
+
         within "#details" do
           fill_in "First Name", with: "Will"
           fill_in "Last Name", with: "Marshall"
           fill_in "Email", with: "test@test.com"
           fill_in "Phone", with: "0468363090"
         end
-        toggle_billing
+
         check "Save as default billing address"
+
         within "#billing" do
           fill_in "City", with: "Melbourne"
           fill_in "Postcode", with: "3066"
@@ -85,7 +84,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
           select "Victoria", from: "State"
         end
 
-        toggle_shipping
         check "Shipping address same as billing address?"
         check "Save as default shipping address"
       end
@@ -100,7 +98,7 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
           fill_out_form
         end
 
-        it "sets user's default billing address and shipping address" do
+        it "allows user to save default billing address and shipping address" do
           user.bill_address.should be_nil
           user.ship_address.should be_nil
 
@@ -121,7 +119,7 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         end
 
         it "it doesn't tell about previous orders" do
-          expect(page).to_not have_content("You have an order for this order cycle already.")
+          expect(page).to have_no_content("You have an order for this order cycle already.")
         end
       end
 
@@ -139,12 +137,28 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
         end
       end
 
+      context "when the user has a preset shipping and billing address" do
+        before do
+          user.bill_address = build(:address)
+          user.ship_address = build(:address)
+          user.save!
+        end
+
+        it "checks out successfully" do
+          visit checkout_path
+          choose sm2.name
+          choose pm1.name
+
+          expect do
+            place_order
+            page.should have_content "Your order has been processed successfully"
+          end.to enqueue_job ConfirmOrderJob
+        end
+      end
+
       context "with Stripe" do
         let!(:stripe_pm) do
-          create(:stripe_payment_method,
-            distributors: [distributor],
-            name: "Stripe",
-            preferred_enterprise_id: distributor.id)
+          create(:stripe_payment_method, distributors: [distributor])
         end
 
         let!(:saved_card) do
@@ -166,12 +180,12 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
           allow(Stripe).to receive(:api_key) { "sk_test_12345" }
           allow(Stripe).to receive(:publishable_key) { "some_key" }
           Spree::Config.set(stripe_connect_enabled: true)
-          stub_request(:post, "https://sk_test_12345:@api.stripe.com/v1/charges")
+          stub_request(:post, "https://api.stripe.com/v1/charges")
+            .with(basic_auth: ["sk_test_12345", ""])
             .to_return(status: 200, body: JSON.generate(response_mock))
 
           visit checkout_path
           fill_out_form
-          toggle_payment
           choose stripe_pm.name
         end
 
@@ -179,10 +193,9 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
           # shows the saved credit card dropdown
           expect(page).to have_content I18n.t("spree.checkout.payment.stripe.used_saved_card")
 
-          # removes the input fields when a saved card is selected"
-          expect(page).to have_selector "#card-element.StripeElement"
-          select "Visa x-1111 Exp:01/2025", from: "selected_card"
-          expect(page).to_not have_selector "#card-element.StripeElement"
+          # default card is selected, form element is not shown
+          expect(page).to have_no_selector "#card-element.StripeElement"
+          expect(page).to have_select 'selected_card', selected: "Visa x-1111 Exp:01/2025"
 
           # allows checkout
           place_order
@@ -208,7 +221,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       end
 
       it "shows a breakdown of the order price" do
-        toggle_shipping
         choose sm2.name
 
         page.should have_selector 'orderdetails .cart-total', text: with_currency(11.23)
@@ -222,7 +234,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       end
 
       it "shows all shipping methods in order by name" do
-        toggle_shipping
         within '#shipping' do
           expect(page).to have_selector "label", count: 4 # Three shipping methods + instructions label
           labels = page.all('label').map(&:text)
@@ -234,7 +245,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
 
       context "when shipping method requires an address" do
         before do
-          toggle_shipping
           choose sm1.name
         end
         it "shows ship address forms when 'same as billing address' is unchecked" do
@@ -249,7 +259,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
 
         it "shows shipping methods allowed by the rule" do
           # No rules in effect
-          toggle_shipping
           page.should have_content "Frogs"
           page.should have_content "Donkeys"
           page.should have_content "Local"
@@ -295,7 +304,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
       before do
         visit checkout_path
         checkout_as_guest
-        toggle_payment
       end
 
       it "shows all available payment methods" do
@@ -306,16 +314,12 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
 
       describe "purchasing" do
         it "takes us to the order confirmation page when we submit a complete form" do
-          toggle_details
-
           within "#details" do
             fill_in "First Name", with: "Will"
             fill_in "Last Name", with: "Marshall"
             fill_in "Email", with: "test@test.com"
             fill_in "Phone", with: "0468363090"
           end
-
-          toggle_billing
 
           within "#billing" do
             fill_in "Address", with: "123 Your Face"
@@ -325,14 +329,10 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
             fill_in "Postcode", with: "3066"
           end
 
-          toggle_shipping
-
           within "#shipping" do
             choose sm2.name
             fill_in 'Any comments or special instructions?', with: "SpEcIaL NoTeS"
           end
-
-          toggle_payment
 
           within "#payment" do
             choose pm1.name
@@ -362,18 +362,16 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
 
         context "with basic details filled" do
           before do
-            toggle_shipping
             choose sm1.name
-            toggle_payment
             choose pm1.name
-            toggle_details
+
             within "#details" do
               fill_in "First Name", with: "Will"
               fill_in "Last Name", with: "Marshall"
               fill_in "Email", with: "test@test.com"
               fill_in "Phone", with: "0468363090"
             end
-            toggle_billing
+
             within "#billing" do
               fill_in "City", with: "Melbourne"
               fill_in "Postcode", with: "3066"
@@ -381,7 +379,7 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
               select "Australia", from: "Country"
               select "Victoria", from: "State"
             end
-            toggle_shipping
+
             check "Shipping address same as billing address?"
           end
 
@@ -421,7 +419,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
               expect(page).to have_selector ".transaction-fee td", text: with_currency(0.00)
               expect(page).to have_selector ".total", text: with_currency(11.23)
 
-              toggle_payment
               choose "#{pm2.name} (#{with_currency(5.67)})"
 
               expect(page).to have_selector ".transaction-fee td", text: with_currency(5.67)
@@ -443,7 +440,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
                 let!(:pm1) { create(:payment_method, distributors: [distributor], name: "Roger rabbit", type: gateway_type) }
 
                 it "takes us to the order confirmation page when submitted with a valid credit card" do
-                  toggle_payment
                   fill_in 'Card Number', with: "4111111111111111"
                   select 'February', from: 'secrets.card_month'
                   select (Date.current.year+1).to_s, from: 'secrets.card_year'
@@ -458,7 +454,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
                 end
 
                 it "shows the payment processing failed message when submitted with an invalid credit card" do
-                  toggle_payment
                   fill_in 'Card Number', with: "9999999988887777"
                   select 'February', from: 'secrets.card_month'
                   select (Date.current.year+1).to_s, from: 'secrets.card_year'
@@ -475,31 +470,6 @@ feature "As a consumer I want to check out my cart", js: true, retry: 3 do
             end
           end
         end
-      end
-    end
-
-    context "when the customer has a pre-set shipping and billing address" do
-      before do
-        # Load up the customer's order and give them a shipping and billing address
-        # This is equivalent to when the customer has ordered before and their addresses
-        # are pre-populated.
-        o = Spree::Order.last
-        o.ship_address = build(:address)
-        o.bill_address = build(:address)
-        o.save!
-      end
-
-      it "checks out successfully", retry: 3 do
-        visit checkout_path
-        checkout_as_guest
-        choose sm2.name
-        toggle_payment
-        choose pm1.name
-
-        expect do
-          place_order
-          page.should have_content "Your order has been processed successfully"
-        end.to enqueue_job ConfirmOrderJob
       end
     end
   end

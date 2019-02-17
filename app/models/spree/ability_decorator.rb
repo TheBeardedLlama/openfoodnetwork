@@ -61,8 +61,12 @@ class AbilityDecorator
       order.user == user
     end
 
-    can [:destroy], Spree::CreditCard do |credit_card|
+    can [:update, :destroy], Spree::CreditCard do |credit_card|
       credit_card.user == user
+    end
+
+    can [:update], Customer do |customer|
+      customer.user == user
     end
   end
 
@@ -95,7 +99,7 @@ class AbilityDecorator
     end
 
     can [:admin, :index, :create], Enterprise
-    can [:read, :edit, :update, :bulk_update, :resend_confirmation], Enterprise do |enterprise|
+    can [:read, :edit, :update, :remove_logo, :remove_promo_image, :bulk_update, :resend_confirmation], Enterprise do |enterprise|
       OpenFoodNetwork::Permissions.new(user).editable_enterprises.include? enterprise
     end
     can [:welcome, :register], Enterprise do |enterprise|
@@ -127,12 +131,14 @@ class AbilityDecorator
     can [:admin, :connect, :status, :destroy], StripeAccount do |stripe_account|
       user.enterprises.include? stripe_account.enterprise
     end
+
+    can [:admin, :create], :manager_invitation
   end
 
   def add_product_management_abilities(user)
     # Enterprise User can only access products that they are a supplier for
     can [:create], Spree::Product
-    can [:admin, :read, :update, :product_distributions, :seo, :group_buy_options, :bulk_edit, :bulk_update, :clone, :delete, :destroy], Spree::Product do |product|
+    can [:admin, :read, :index, :update, :product_distributions, :seo, :group_buy_options, :bulk_update, :clone, :delete, :destroy], Spree::Product do |product|
       OpenFoodNetwork::Permissions.new(user).managed_product_enterprises.include? product.supplier
     end
 
@@ -175,15 +181,22 @@ class AbilityDecorator
     can [:admin, :index, :read, :search], Spree::Taxon
     can [:admin, :index, :read, :create, :edit], Spree::Classification
 
-    can [:admin, :index, :import, :save], ProductImporter
+    can [:admin, :index, :guide, :import, :save, :save_data, :validate_data, :reset_absent_products], ProductImport::ProductImporter
 
     # Reports page
-    can [:admin, :index, :customers, :orders_and_distributors, :group_buys, :bulk_coop, :payments, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :packing], :report
+    can [:admin, :index, :customers, :orders_and_distributors, :group_buys, :bulk_coop, :payments,
+         :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :packing],
+        :report
+    add_enterprise_fee_summary_abilities(user)
   end
 
   def add_order_cycle_management_abilities(user)
     can [:admin, :index, :read, :edit, :update], OrderCycle do |order_cycle|
       OrderCycle.accessible_by(user).include? order_cycle
+    end
+    can [:admin, :index, :create], Schedule
+    can [:admin, :update, :destroy], Schedule do |schedule|
+      OpenFoodNetwork::Permissions.new(user).editable_schedules.include? schedule
     end
     can [:bulk_update, :clone, :destroy, :notify_producers], OrderCycle do |order_cycle|
       user.enterprises.include? order_cycle.coordinator
@@ -200,8 +213,11 @@ class AbilityDecorator
       # during the order creation process from the admin backend
       order.distributor.nil? || user.enterprises.include?(order.distributor) || order.order_cycle.andand.coordinated_by?(user)
     end
-    can [:admin, :bulk_management, :managed], Spree::Order if user.admin? || user.enterprises.any?(&:is_distributor)
-    can [:admin , :for_line_items], Enterprise
+    can [:admin, :bulk_management, :managed], Spree::Order do
+      user.admin? || user.enterprises.any?(&:is_distributor)
+    end
+    can [:admin, :create, :show, :poll], :invoice
+    can [:admin, :visible], Enterprise
     can [:admin, :index, :create, :update, :destroy], :line_item
     can [:admin, :index, :create], Spree::LineItem
     can [:destroy, :update], Spree::LineItem do |item|
@@ -244,10 +260,24 @@ class AbilityDecorator
     end
 
     # Reports page
-    can [:admin, :index, :customers, :group_buys, :bulk_coop, :sales_tax, :payments, :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory, :order_cycle_management, :xero_invoices], :report
+    can [:admin, :index, :customers, :group_buys, :bulk_coop, :sales_tax, :payments,
+         :orders_and_distributors, :orders_and_fulfillment, :products_and_inventory,
+         :order_cycle_management, :xero_invoices], :report
+    add_enterprise_fee_summary_abilities(user)
 
     can [:create], Customer
-    can [:admin, :index, :update, :destroy], Customer, enterprise_id: Enterprise.managed_by(user).pluck(:id)
+    can [:admin, :index, :update, :destroy, :show], Customer, enterprise_id: Enterprise.managed_by(user).pluck(:id)
+    can [:admin, :new, :index], Subscription
+    can [:create, :edit, :update, :cancel, :pause, :unpause], Subscription do |subscription|
+      user.enterprises.include?(subscription.shop)
+    end
+    can [:admin, :build], SubscriptionLineItem
+    can [:destroy], SubscriptionLineItem do |subscription_line_item|
+      user.enterprises.include?(subscription_line_item.subscription.shop)
+    end
+    can [:admin, :edit, :cancel, :resume], ProxyOrder do |proxy_order|
+      user.enterprises.include?(proxy_order.subscription.shop)
+    end
   end
 
   def add_relationship_management_abilities(user)
@@ -255,6 +285,16 @@ class AbilityDecorator
     can [:destroy], EnterpriseRelationship do |enterprise_relationship|
       user.enterprises.include? enterprise_relationship.parent
     end
+  end
+
+  def add_enterprise_fee_summary_abilities(user)
+    feature_enabled = FeatureFlags.new(user).enterprise_fee_summary_enabled?
+    return unless feature_enabled
+
+    # Reveal the report link in spree/admin/reports#index
+    can [:enterprise_fee_summary], :report
+    # Allow direct access to the report resource
+    can [:admin, :new, :create], :enterprise_fee_summary
   end
 end
 

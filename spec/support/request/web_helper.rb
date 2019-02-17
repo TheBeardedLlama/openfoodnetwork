@@ -26,11 +26,6 @@ module WebHelper
     have_selector selector
   end
 
-  def current_path_should_be path
-    current_path = URI.parse(current_url).path
-    expect(page).to have_current_path path
-  end
-
   def fill_in_fields(field_values)
     field_values.each do |key, value|
       begin
@@ -46,49 +41,8 @@ module WebHelper
     page.find_by_id(from).find("option[value='#{value}']").select_option
   end
 
-  def should_have_failed
-    page.status_code.should == 200
-    errors.count.should > 0
-  end
-
-  def successful?
-    page.status_code.should == 200
-    errors.count.should == 0
-    flash_message.should include 'successful'
-  end
-
-  def updated_field(field, value)
-    wait_for_ajax
-    yield(field, value)
-  rescue Capybara::TimeoutError
-    flunk "Expected #{field} to update to #{value}."
-  end
-
-  def updated_css(css)
-    wait_for_ajax
-    yield(css)
-  rescue Capybara::TimeoutError
-    flunk "Expected updated css: #{css}."
-  end
-
-  def user_nav
-    find('div.user/div.name').text
-  end
-
   def flash_message
-    find('.flash', visible: false).text.strip
-  end
-
-  def errors
-    all('.error')
-  end
-
-  def property_name
-    find('.property-name').text
-  end
-
-  def error_messages
-    errors.map(&:text)
+    find('.flash', visible: false).text(:all).strip
   end
 
   def handle_js_confirm(accept=true)
@@ -96,21 +50,9 @@ module WebHelper
     yield
   end
 
-  def click_dialog_button(button_content)
-    page.find(:xpath, "//div[@class=\"ui-dialog-buttonset\"]//span[contains(text(),\"#{button_content}\")]").click
-  end
-
   def visit_delete(url)
     response = Capybara.current_session.driver.delete url
     click_link 'redirected' if response.status == 302
-  end
-
-  def trigger_manual_event(field_selector, event = 'change')
-    page.execute_script("$('#{field_selector}').trigger('#{event}');")
-  end
-
-  def dirty_form_dialog
-    DirtyFormDialog.new(page)
   end
 
   def set_i18n_locale(locale = 'en')
@@ -163,13 +105,19 @@ module WebHelper
     targetted_select2(value, options)
   end
 
-  # Deprecated: Use have_select2 instead (spec/support/matchers/select2_matchers.rb)
-  def have_select2_option(value, options)
-    container = options[:dropdown_css] || ".select2-with-searchbox"
+  # Support having different texts to search for and to click in the select2
+  # field.
+  #
+  # This overrides the method in Spree.
+  def targetted_select2_search(value, options)
     page.execute_script %Q{$('#{options[:from]}').select2('open')}
-    page.execute_script "$('#{container} input.select2-input').val('#{value}').trigger('keyup-change');"
-    sleep 1
-    have_selector "div.select2-result-label", text: value
+    page.execute_script "$('#{options[:dropdown_css]} input.select2-input').val('#{value}').trigger('keyup-change');"
+    select_select2_result(options[:select_text] || value)
+  end
+
+  def multi_select2_select(value, options)
+    find("#s2id_#{options[:from]}").find('ul li.select2-search-field').click
+    select_select2_result(value)
   end
 
   def open_select2(selector)
@@ -180,20 +128,32 @@ module WebHelper
     page.execute_script "jQuery('#{selector}').select2('close');"
   end
 
-  def perform_and_ensure(action, *args, assertion)
-    # Buttons/Links/Checkboxes can be unresponsive for a while
-    # so keep clicking them until assertion is satified
-    using_wait_time 0.5 do
-      10.times do
-        send(action, *args)
-        return if assertion.call
-      end
-      # Only make it here if we have tried 10 times
-      expect(assertion.call).to be true
+  def select2_search_async(value, options)
+    id = find_label_by_text(options[:from])
+    options[:from] = "#s2id_#{id}"
+    targetted_select2_search_async(value, options)
+  end
+
+  def targetted_select2_search_async(value, options)
+    page.execute_script %Q{$('#{options[:from]}').select2('open')}
+    page.execute_script "$('#{options[:dropdown_css]} input.select2-input').val('#{value}').trigger('keyup-change');"
+    select_select2_result_async(value)
+  end
+
+  def select_select2_result_async(value)
+    while (page.has_selector? "div.select2-searching") do
+      return if page.has_selector? "div.select2-no-results"
+      sleep 0.2
     end
+    page.execute_script(%Q{$("div.select2-result-label:contains('#{value}')").mouseup()})
+  end
+
+  def accept_js_alert
+    page.driver.browser.switch_to.alert.accept
   end
 
   private
+
   def wait_for_ajax
     wait_until { page.evaluate_script("$.active") == 0 }
   end

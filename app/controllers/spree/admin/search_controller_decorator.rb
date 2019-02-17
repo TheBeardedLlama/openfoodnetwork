@@ -10,10 +10,10 @@ Spree::Admin::SearchController.class_eval do
         :ship_address_lastname_start => params[:q],
         :bill_address_firstname_start => params[:q],
         :bill_address_lastname_start => params[:q]
-        }).result.limit(10)
+      }).result.limit(10)
     end
 
-    render :users
+    render json: @users, each_serializer: Api::Admin::UserSerializer
   end
 
   def customers

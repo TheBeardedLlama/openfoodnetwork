@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'spree/api/testing_support/helpers'
 
 describe Spree::UsersController, type: :controller do
   include AuthenticationWorkflow
@@ -27,7 +28,8 @@ describe Spree::UsersController, type: :controller do
     it "returns orders placed by the user at normal shops" do
       spree_get :show
 
-      expect(orders).to eq [d1o1, d1o2]
+      expect(orders).to include d1o1, d1o2
+      expect(orders).to_not include d1_order_for_u2, d1o3, d2o1
       expect(shops).to include distributor1
 
       # Doesn't return orders belonging to the accounts distributor" do
@@ -43,6 +45,20 @@ describe Spree::UsersController, type: :controller do
 
       # Doesn't return uncompleted orders" do
       expect(orders).not_to include d1o3
+    end
+  end
+
+  describe "registered_email" do
+    let!(:user) { create(:user) }
+
+    it "returns true if email corresponds to a registered user" do
+      spree_post :registered_email, email: user.email
+      expect(json_response['registered']).to eq true
+    end
+
+    it "returns false if email does not correspond to a registered user" do
+      spree_post :registered_email, email: 'nonregistereduser@example.com'
+      expect(json_response['registered']).to eq false
     end
   end
 end

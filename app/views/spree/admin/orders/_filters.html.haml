@@ -1,0 +1,53 @@
+%div{"data-hook" => "admin_orders_index_search"}
+  = form_tag false, {name: "orders_form", "ng-submit" => "fetchResults()"} do
+    .field-block.alpha.four.columns
+      .date-range-filter.field
+        = label_tag nil, t(:date_range)
+        .date-range-fields
+          = text_field_tag "q[completed_at_gt]", nil, class: 'datepicker', datepicker: 'q.completed_at_gt', 'ng-model' => 'q.completed_at_gt', :placeholder => t(:start)
+          %span.range-divider
+            %i.icon-arrow-right
+          = text_field_tag "q[completed_at_lt]", nil, class: 'datepicker', datepicker: 'q.completed_at_lt', 'ng-model' => 'q.completed_at_lt', :placeholder => t(:stop)
+      .field
+        = label_tag nil, t(:status)
+        = select_tag("q[state_eq]",
+            options_for_select(Spree::Order.state_machines[:state].states.collect {|s| [t("order_state.#{s.name}"), s.value]}),
+            {include_blank: true, class: 'select2', 'ng-model' => 'q.state_eq'})
+    .four.columns
+      .field
+        = label_tag nil, t(:order_number)
+        = text_field_tag "q[number_cont]", nil, 'ng-model' => 'q.number_cont'
+      .field
+        = label_tag nil, t(:email)
+        = email_field_tag "q[email_cont", nil, 'ng-model' => 'q.email_cont'
+    .four.columns
+      .field
+        = label_tag nil, t(:first_name_begins_with)
+        = text_field_tag "q[bill_address_firstname_start]", nil, size: 25, 'ng-model' => 'q.bill_address_firstname_start'
+      .field
+        = label_tag nil, t(:last_name_begins_with)
+        = text_field_tag "q[bill_address_lastname_start]", nil, size: 25, 'ng-model' => 'q.bill_address_lastname_start'
+    .omega.four.columns
+      .field.checkbox
+        %label
+          = check_box_tag "q[completed_at_not_null]", 1, true, {'ng-model' => 'q.completed_at_not_null'}
+          = t(:show_only_complete_orders)
+      .field.checkbox
+        %label
+          = check_box_tag "q[inventory_units_shipment_id_null]", 1, false, {'ng-model' => 'q.inventory_units_shipment_id_null'}
+          = t(:show_only_unfulfilled_orders)
+    .field-block.alpha.eight.columns
+      = label_tag nil, t(:distributors)
+      = select_tag("q[distributor_id_in]",
+          options_for_select(Enterprise.is_distributor.managed_by(spree_current_user).map {|e| [e.name, e.id]}, params[:distributor_ids]),
+          {class: "select2 fullwidth", multiple: true, 'ng-model' => 'q.distributor_id_in'})
+    .field-block.omega.eight.columns
+      = label_tag nil, t(:order_cycles)
+      = select_tag("q[order_cycle_id_in]",
+          options_for_select(OrderCycle.managed_by(spree_current_user).where('order_cycles.orders_close_at is not null').order('order_cycles.orders_close_at DESC').map {|oc| [oc.name, oc.id]}, params[:order_cycle_ids]),
+          {class: "select2 fullwidth", multiple: true, 'ng-model' => 'q.order_cycle_id_in'})
+    .clearfix
+    .actions.filter-actions
+      %div
+        %a.button.icon-search{'ng-click' => 'fetchResults()'}
+          = t(:filter_results)

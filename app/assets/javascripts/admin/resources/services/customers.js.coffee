@@ -1,13 +1,14 @@
-angular.module("admin.resources").factory "Customers", ($q, InfoDialog, RequestMonitor, CustomerResource, CurrentShop) ->
+angular.module("admin.resources").factory "Customers", ($q, $injector, InfoDialog, RequestMonitor, CustomerResource) ->
   new class Customers
     all: []
     byID: {}
     pristineByID: {}
 
-    add: (email) ->
-      params =
-        enterprise_id: CurrentShop.shop.id
-        email: email
+    constructor: ->
+      if $injector.has('customers')
+        @load($injector.get('customers'))
+
+    add: (params) ->
       CustomerResource.create params, (customer) =>
         if customer.id
           @all.unshift customer

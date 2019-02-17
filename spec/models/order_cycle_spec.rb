@@ -1,6 +1,8 @@
 require 'spec_helper'
 
 describe OrderCycle do
+  include OpenFoodNetwork::EmailHelper
+
   it "should be valid when built from factory" do
     build(:simple_order_cycle).should be_valid
   end
@@ -9,6 +11,11 @@ describe OrderCycle do
     oc = build(:simple_order_cycle)
     oc.name = ''
     oc.should_not be_valid
+  end
+
+  it 'should not be valid when open date is after close date' do
+    oc = build(:simple_order_cycle, orders_open_at: Time.zone.now, orders_close_at: 1.minute.ago)
+    expect(oc).to_not be_valid
   end
 
   it "has a coordinator and associated fees" do
@@ -196,11 +203,14 @@ describe OrderCycle do
     let(:d1) { create(:enterprise) }
     let(:d2) { create(:enterprise) }
     let!(:e0) { create(:exchange, incoming: true,
-                order_cycle: oc, sender: create(:enterprise), receiver: oc.coordinator) }
+                order_cycle: oc, sender: create(:enterprise), receiver: oc.coordinator)
+    }
     let!(:e1) { create(:exchange, incoming: false,
-                order_cycle: oc, sender: oc.coordinator, receiver: d1) }
+                order_cycle: oc, sender: oc.coordinator, receiver: d1)
+    }
     let!(:e2) { create(:exchange, incoming: false,
-                order_cycle: oc, sender: oc.coordinator, receiver: d2) }
+                order_cycle: oc, sender: oc.coordinator, receiver: d2)
+    }
     let!(:p0) { create(:simple_product) }
     let!(:p1) { create(:simple_product) }
     let!(:p1_v_deleted) { create(:variant, product: p1, deleted_at: Time.zone.now) }
@@ -517,10 +527,7 @@ describe OrderCycle do
     let!(:order5) { create(:completed_order_with_totals, distributor: shop, user: user, order_cycle: oc)  }
 
     before do
-      Spree::MailMethod.create!(
-        environment: Rails.env,
-        preferred_mails_from: 'spree@example.com'
-      )
+      setup_email
     end
     before { order5.cancel }
 

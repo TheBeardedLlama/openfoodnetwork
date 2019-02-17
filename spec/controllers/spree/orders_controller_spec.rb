@@ -1,163 +1,139 @@
 require 'spec_helper'
 
 describe Spree::OrdersController, type: :controller do
+  include OpenFoodNetwork::EmailHelper
+
   let(:distributor) { double(:distributor) }
   let(:order) { create(:order) }
   let(:order_cycle) { create(:simple_order_cycle) }
 
-  it "redirects home when no distributor is selected" do
-    spree_get :edit
-    response.should redirect_to root_path
-  end
-
-  it "redirects to shop when order is empty" do
-    controller.stub(:current_distributor).and_return(distributor)
-    controller.stub(:current_order_cycle).and_return(order_cycle)
-    controller.stub(:current_order).and_return order
-    order.stub_chain(:line_items, :empty?).and_return true
-    order.stub(:insufficient_stock_lines).and_return []
-    session[:access_token] = order.token
-    spree_get :edit
-    response.should redirect_to shop_path
-  end
-
-  it "redirects to the shop when no order cycle is selected" do
-    controller.stub(:current_distributor).and_return(distributor)
-    spree_get :edit
-    response.should redirect_to shop_path
-  end
-
-  it "redirects home with message if hub is not ready for checkout" do
-    VariantOverride.stub(:indexed).and_return({})
-
-    order = subject.current_order(true)
-    distributor.stub(:ready_for_checkout?) { false }
-    order.stub(distributor: distributor, order_cycle: order_cycle)
-
-    order.should_receive(:empty!)
-    order.should_receive(:set_distribution!).with(nil, nil)
-
-    spree_get :edit
-
-    response.should redirect_to root_url
-    flash[:info].should == "The hub you have selected is temporarily closed for orders. Please try again later."
-  end
-
-  describe "when an item has insufficient stock" do
-    let(:order) { subject.current_order(true) }
-    let(:oc) { create(:simple_order_cycle, distributors: [d], variants: [variant]) }
-    let(:d) { create(:distributor_enterprise, shipping_methods: [create(:shipping_method)], payment_methods: [create(:payment_method)]) }
-    let(:variant) { create(:variant, on_demand: false, on_hand: 5) }
-    let(:line_item) { order.line_items.last }
+  describe "viewing an order" do
+    let(:customer) { create(:customer) }
+    let(:order) { create(:order_with_credit_payment, customer: customer, distributor: customer.enterprise) }
 
     before do
-      order.set_distribution! d, oc
-      order.add_variant variant, 5
-      variant.update_attributes! on_hand: 3
+      allow(controller).to receive(:spree_current_user) { current_user }
     end
 
-    it "displays a flash message when we view the cart" do
-      spree_get :edit
-      expect(response.status).to eq 200
-      flash[:error].should == "An item in your cart has become unavailable."
-    end
-  end
+    context "after checking out as an anonymous guest" do
+      let(:customer) { create(:customer, user: nil) }
+      let(:current_user) { nil }
 
-  describe "returning stock levels in JSON on success" do
-    let(:product) { create(:simple_product) }
+      it "loads page" do
+        spree_get :show, id: order.number, token: order.token
+        expect(response).to be_success
+      end
 
-    it "returns stock levels as JSON" do
-      controller.stub(:variant_ids_in) { [123] }
-      controller.stub(:stock_levels) { 'my_stock_levels' }
-      Spree::OrderPopulator.stub(:new).and_return(populator = double())
-      populator.stub(:populate) { true }
-      populator.stub(:variants_h) { {} }
-
-      xhr :post, :populate, use_route: :spree, format: :json
-
-      data = JSON.parse(response.body)
-      data['stock_levels'].should == 'my_stock_levels'
+      it "stores order token in session as 'access_token'" do
+        spree_get :show, id: order.number, token: order.token
+        expect(session[:access_token]).to eq(order.token)
+      end
     end
 
-    describe "generating stock levels" do
-      let!(:order) { create(:order) }
-      let!(:li) { create(:line_item, order: order, variant: v, quantity: 2, max_quantity: 3) }
-      let!(:v) { create(:variant, count_on_hand: 4) }
-      let!(:v2) { create(:variant, count_on_hand: 2) }
+    context "when returning to order page after checking out as an anonymous guest" do
+      let(:customer) { create(:customer, user: nil) }
+      let(:current_user) { nil }
 
       before do
-        order.reload
-        controller.stub(:current_order) { order }
+        session[:access_token] = order.token
       end
 
-      it "returns a hash with variant id, quantity, max_quantity and stock on hand" do
-        controller.stock_levels(order, [v.id]).should ==
-          {v.id => {quantity: 2, max_quantity: 3, on_hand: 4}}
-      end
-
-      it "includes all line items, even when the variant_id is not specified" do
-        controller.stock_levels(order, []).should ==
-          {v.id => {quantity: 2, max_quantity: 3, on_hand: 4}}
-      end
-
-      it "includes an empty quantity entry for variants that aren't in the order" do
-        controller.stock_levels(order, [v.id, v2.id]).should ==
-          {v.id  => {quantity: 2, max_quantity: 3, on_hand: 4},
-           v2.id => {quantity: 0, max_quantity: 0, on_hand: 2}}
-      end
-
-      describe "encoding Infinity" do
-        let!(:v) { create(:variant, on_demand: true, count_on_hand: 0) }
-
-        it "encodes Infinity as a large, finite integer" do
-          controller.stock_levels(order, [v.id]).should ==
-            {v.id => {quantity: 2, max_quantity: 3, on_hand: 2147483647}}
-        end
+      it "loads page" do
+        spree_get :show, id: order.number
+        expect(response).to be_success
       end
     end
 
-    it "extracts variant ids from the populator" do
-      variants_h = [{:variant_id=>"900", :quantity=>2, :max_quantity=>nil},
-       {:variant_id=>"940", :quantity=>3, :max_quantity=>3}]
+    context "when logged in as the customer" do
+      let(:current_user) { order.user }
 
-      controller.variant_ids_in(variants_h).should == [900, 940]
+      it "loads page" do
+        spree_get :show, id: order.number
+        expect(response).to be_success
+      end
+    end
+
+    context "when logged in as another customer" do
+      let(:current_user) { create(:user) }
+
+      it "redirects to unauthorized" do
+        spree_get :show, id: order.number
+        expect(response.status).to eq(401)
+      end
+    end
+
+    context "when neither checked out as an anonymous guest nor logged in" do
+      let(:current_user) { nil }
+
+      before do
+        request.env["PATH_INFO"] = spree.order_path(order)
+      end
+
+      it "redirects to unauthorized" do
+        spree_get :show, id: order.number
+        expect(response).to redirect_to(root_path(anchor: "login?after_login=#{spree.order_path(order)}"))
+        expect(flash[:error]).to eq("Please log in to view your order.")
+      end
     end
   end
 
-  context "adding a group buy product to the cart" do
-    it "sets a variant attribute for the max quantity" do
-      distributor_product = create(:distributor_enterprise)
-      p = create(:product, :distributors => [distributor_product], :group_buy => true)
+  describe "viewing cart" do
+    it "redirects home when no distributor is selected" do
+      spree_get :edit
+      expect(response).to redirect_to root_path
+    end
+
+    it "redirects to shop when order is empty" do
+      allow(controller).to receive(:current_distributor).and_return(distributor)
+      allow(controller).to receive(:current_order_cycle).and_return(order_cycle)
+      allow(controller).to receive(:current_order).and_return order
+      allow(order).to receive_message_chain(:line_items, :empty?).and_return true
+      allow(order).to receive(:insufficient_stock_lines).and_return []
+      session[:access_token] = order.token
+      spree_get :edit
+      expect(response).to redirect_to shop_path
+    end
+
+    it "redirects to the shop when no order cycle is selected" do
+      allow(controller).to receive(:current_distributor).and_return(distributor)
+      spree_get :edit
+      expect(response).to redirect_to shop_path
+    end
+
+    it "redirects home with message if hub is not ready for checkout" do
+      allow(VariantOverride).to receive(:indexed).and_return({})
 
       order = subject.current_order(true)
-      order.stub(:distributor) { distributor_product }
-      order.should_receive(:set_variant_attributes).with(p.master, {'max_quantity' => '3'})
-      controller.stub(:current_order).and_return(order)
+      allow(distributor).to receive(:ready_for_checkout?) { false }
+      allow(order).to receive_messages(distributor: distributor, order_cycle: order_cycle)
 
-      expect do
-        spree_post :populate, :variants => {p.master.id => 1}, :variant_attributes => {p.master.id => {:max_quantity => 3}}
-      end.to change(Spree::LineItem, :count).by(1)
+      expect(order).to receive(:empty!)
+      expect(order).to receive(:set_distribution!).with(nil, nil)
+
+      spree_get :edit
+
+      expect(response).to redirect_to root_url
+      expect(flash[:info]).to eq("The hub you have selected is temporarily closed for orders. Please try again later.")
     end
 
-    it "returns HTTP success when successful" do
-      Spree::OrderPopulator.stub(:new).and_return(populator = double())
-      populator.stub(:populate) { true }
-      populator.stub(:variants_h) { {} }
-      xhr :post, :populate, use_route: :spree, format: :json
-      response.status.should == 200
-    end
+    describe "when an item has insufficient stock" do
+      let(:order) { subject.current_order(true) }
+      let(:oc) { create(:simple_order_cycle, distributors: [d], variants: [variant]) }
+      let(:d) { create(:distributor_enterprise, shipping_methods: [create(:shipping_method)], payment_methods: [create(:payment_method)]) }
+      let(:variant) { create(:variant, on_demand: false, on_hand: 5) }
+      let(:line_item) { order.line_items.last }
 
-    it "returns failure when unsuccessful" do
-      Spree::OrderPopulator.stub(:new).and_return(populator = double())
-      populator.stub(:populate).and_return false
-      xhr :post, :populate, use_route: :spree, format: :json
-      response.status.should == 412
-    end
+      before do
+        order.set_distribution! d, oc
+        order.add_variant variant, 5
+        variant.update_attributes! on_hand: 3
+      end
 
-    it "tells populator to overwrite" do
-      Spree::OrderPopulator.stub(:new).and_return(populator = double())
-      populator.should_receive(:populate).with({}, true)
-      xhr :post, :populate, use_route: :spree, format: :json
+      it "displays a flash message when we view the cart" do
+        spree_get :edit
+        expect(response.status).to eq 200
+        expect(flash[:error]).to eq("An item in your cart has become unavailable.")
+      end
     end
   end
 
@@ -170,8 +146,8 @@ describe Spree::OrdersController, type: :controller do
           "0" => {quantity: "0", id: "9999"},
           "1" => {quantity: "99", id: li.id}
         }}
-        response.status.should == 302
-        li.reload.quantity.should == 99
+        expect(response.status).to eq(302)
+        expect(li.reload.quantity).to eq(99)
       end
     end
 
@@ -184,9 +160,9 @@ describe Spree::OrdersController, type: :controller do
         "1" => {quantity: "99", id: li.id}
       }
 
-      controller.remove_missing_line_items(attrs).should == {
+      expect(controller.remove_missing_line_items(attrs)).to eq({
         "1" => {quantity: "99", id: li.id}
-      }
+      })
     end
   end
 
@@ -257,7 +233,7 @@ describe Spree::OrdersController, type: :controller do
       it "updates the fees" do
         expect(order.reload.adjustment_total).to eq enterprise_fee.calculator.preferred_amount
 
-        controller.stub spree_current_user: user
+        allow(controller).to receive_messages spree_current_user: user
         spree_post :update, params
 
         expect(order.reload.adjustment_total).to eq enterprise_fee.calculator.preferred_amount * 2
@@ -398,10 +374,7 @@ describe Spree::OrdersController, type: :controller do
         let(:order) { create(:completed_order_with_totals, user: user) }
 
         before do
-          Spree::MailMethod.create!(
-            environment: Rails.env,
-            preferred_mails_from: 'spree@example.com'
-          )
+          setup_email
         end
 
         it "responds with success" do

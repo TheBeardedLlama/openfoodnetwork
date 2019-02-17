@@ -1,5 +1,6 @@
 class VariantOverride < ActiveRecord::Base
   extend Spree::LocalizedNumber
+  include StockSettingsOverrideValidation
 
   acts_as_taggable
 
@@ -17,6 +18,12 @@ class VariantOverride < ActiveRecord::Base
 
   scope :for_hubs, lambda { |hubs|
     where(hub_id: hubs)
+  }
+
+  scope :distinct_import_dates, lambda {
+    select('DISTINCT variant_overrides.import_date').
+      where('variant_overrides.import_date IS NOT NULL').
+      order('import_date DESC')
   }
 
   localize_number :price
@@ -76,7 +83,7 @@ class VariantOverride < ActiveRecord::Base
   def reset_stock!
     if resettable
       if default_stock?
-        self.attributes = { count_on_hand: default_stock }
+        self.attributes = { on_demand: false, count_on_hand: default_stock }
         self.save
       else
         Bugsnag.notify RuntimeError.new "Attempting to reset stock level for a variant with no default stock level."

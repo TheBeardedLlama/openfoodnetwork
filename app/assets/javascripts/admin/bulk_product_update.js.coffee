@@ -1,5 +1,6 @@
 angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout, $http, $window, BulkProducts, DisplayProperties, dataFetcher, DirtyProducts, VariantUnitManager, StatusMessage, producers, Taxons, SpreeApiAuth, Columns, tax_categories) ->
     $scope.loading = true
+    $scope.loadingAllPages = true
 
     $scope.StatusMessage = StatusMessage
 
@@ -28,6 +29,7 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
     $scope.filterTaxons = [{id: "0", name: ""}].concat $scope.taxons
     $scope.producerFilter = "0"
     $scope.categoryFilter = "0"
+    $scope.importDateFilter = "0"
     $scope.products = BulkProducts.products
     $scope.filteredProducts = []
     $scope.currentFilters = []
@@ -43,26 +45,25 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
       .catch (message) ->
         $scope.api_error_msg = message
 
-    $scope.$watchCollection '[query, producerFilter, categoryFilter]', ->
+    $scope.$watchCollection '[query, producerFilter, categoryFilter, importDateFilter]', ->
       $scope.limit = 15 # Reset limit whenever searching
 
     $scope.fetchProducts = ->
       $scope.loading = true
-      BulkProducts.fetch($scope.currentFilters).then ->
+      $scope.loadingAllPages = true
+      BulkProducts.fetch($scope.currentFilters, ->
+        $scope.loadingAllPages = false
+      ).then ->
         $scope.resetProducts()
         $scope.loading = false
 
+    $timeout ->
+      if $scope.showLatestImport
+        $scope.importDateFilter = $scope.importDates[1].id
 
     $scope.resetProducts = ->
       DirtyProducts.clear()
       StatusMessage.clear()
-
-    # $scope.matchProducer = (product) ->
-    #   for producer in $scope.producers
-    #     if angular.equals(producer.id, product.producer)
-    #       product.producer = producer
-    #       break
-
 
     $scope.updateOnHand = (product) ->
       on_demand_variants = []
@@ -91,6 +92,7 @@ angular.module("ofn.admin").controller "AdminProductEditCtrl", ($scope, $timeout
       $scope.query = ""
       $scope.producerFilter = "0"
       $scope.categoryFilter = "0"
+      $scope.importDateFilter = "0"
 
     $scope.editWarn = (product, variant) ->
       if (DirtyProducts.count() > 0 and confirm(t("unsaved_changes_confirmation"))) or (DirtyProducts.count() == 0)

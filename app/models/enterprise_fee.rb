@@ -19,13 +19,14 @@ class EnterpriseFee < ActiveRecord::Base
   attr_accessible :enterprise_id, :fee_type, :name, :tax_category_id, :calculator_type, :inherits_tax_category
 
   FEE_TYPES = %w(packing transport admin sales fundraising)
-  PER_ORDER_CALCULATORS = ['Spree::Calculator::FlatRate', 'Spree::Calculator::FlexiRate']
+  PER_ORDER_CALCULATORS = ['Spree::Calculator::FlatRate', 'Spree::Calculator::FlexiRate', 'Spree::Calculator::PriceSack']
 
 
   validates_inclusion_of :fee_type, :in => FEE_TYPES
   validates_presence_of :name
 
   before_save :ensure_valid_tax_category_settings
+  before_destroy :ensure_no_product_distributions
 
   scope :for_enterprise, lambda { |enterprise| where(enterprise_id: enterprise) }
   scope :for_enterprises, lambda { |enterprises| where(enterprise_id: enterprises) }
@@ -66,6 +67,15 @@ class EnterpriseFee < ActiveRecord::Base
       self.tax_category_id = nil if inherits_tax_category?
     end
     return true
+  end
+
+  def ensure_no_product_distributions
+    dependent_distribution = ProductDistribution.where(enterprise_fee_id: self).first
+    return unless dependent_distribution
+    product = dependent_distribution.product
+    error = I18n.t(:enterprise_fees_destroy_error, id: product.id, name: product.name)
+    errors.add(:base, error)
+    false
   end
 
   def refresh_products_cache
